@@ -22,24 +22,10 @@ References:
 """
 
 import abc
-import jax
-import jax.numpy as jnp
-import jax.random as rng
-import numpy as np
-import math
-import random
 import torch
-
-try:
-    import jax_cfd.base as cfd
-except:
-    pass
-
 from torch import Tensor, Size
 from torch.distributions import Normal, MultivariateNormal
 from typing import *
-
-
 
 class MarkovChain(abc.ABC):
     r"""Abstract first-order time-invariant Markov chain class
