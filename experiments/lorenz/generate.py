@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 PATH = Path(__file__).parent.absolute()
+log_file = PATH / 'data' / f'data_generation_log.txt'
 
 def simulate(dataset_idx: int, N: int, L: int):
     '''
@@ -64,7 +65,6 @@ def simulate(dataset_idx: int, N: int, L: int):
             f.create_dataset('x', data=x, dtype=np.float32)
     
     # Log the parameters
-    log_file = PATH / 'data' / f'data_generation_log.txt'
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_entry = f"Time: {current_time}, Index: {dataset_idx}, Parameters: sigma={sigma:.3f}, rho={rho:.3f}, beta={beta:.3f}\n"
     
@@ -112,8 +112,20 @@ if __name__ == "__main__":
     This script generates multiple datasets (with different parameters) and then combines them into a single dataset. 
     The user can specify the number of datasets to generate. A naive choice is to generate only one dataset.
     """
-    num_datasets = 1
-    num_particles = 1024
+    # Create dataset directory
+    data_dir = PATH / 'data'
+    if data_dir.exists():
+        import shutil
+        shutil.rmtree(data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    log_entry = f"Dataset generation started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+    
+    with open(log_file, 'a') as f:
+        f.write(log_entry)
+
+    num_datasets = 25
+    num_particles = 256
     len_trajectory = 1024
     
     for i in range(num_datasets):
@@ -133,3 +145,6 @@ if __name__ == "__main__":
             dataset_path.rename(timestamp_dir / str(i))
             
     print(f"Moved dataset folders to {timestamp_dir}")
+
+    with open(log_file, 'a') as f:
+        f.write('\n')

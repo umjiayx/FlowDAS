@@ -26,6 +26,9 @@ import torch
 from torch import Tensor, Size
 from torch.distributions import Normal, MultivariateNormal
 from typing import *
+from torch.utils.data import Dataset, DataLoader
+from pathlib import Path
+import h5py
 
 class MarkovChain(abc.ABC):
     r"""Abstract first-order time-invariant Markov chain class
@@ -199,3 +202,34 @@ class NoisyLorenz63Generalize(Lorenz63):
     def __init__(self, sigma: float = 10.0, rho: float = 28.0, beta: float = 8/3, **kwargs):
         # Pass these parameters to the parent Lorenz63 class
         super().__init__(sigma=sigma, rho=rho, beta=beta, **kwargs)
+
+
+class TrajectoryDataset(Dataset):
+    def __init__(
+        self,
+        file: Path,
+        window: int = None,
+        flatten: bool = False,
+    ):
+        super().__init__()
+
+        with h5py.File(file, mode='r') as f:
+            self.data = f['x'][:]
+
+        self.window = window
+        self.flatten = flatten
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, i: int) -> Tuple[Tensor, Dict]:
+        x = torch.from_numpy(self.data[i])
+        # print('trajectory',x.shape)
+
+        if self.window is not None:
+            previous = x[:-1]  # All except the last time step (shape [1023])
+            current = x[1:]    # All except the first time step (shape [1023])
+
+    # Stack along the second dimension to get shape [1023, 2]
+        x_pairs = x_pairs = torch.cat((previous, current), dim=1)
+        return x_pairs, {}

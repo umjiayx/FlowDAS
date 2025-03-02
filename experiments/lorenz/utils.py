@@ -1,7 +1,7 @@
 r"""Lorenz experiment helpers"""
 
 import os
-
+import json
 from pathlib import Path
 from typing import *
 
@@ -34,3 +34,7 @@ def make_chain() -> MarkovChain:
 
 def make_chain_generalize(sigma, rho, beta) -> MarkovChain:
     return NoisyLorenz63Generalize(dt=0.025, sigma=sigma, rho=rho, beta=beta)
+
+def save_config(config: Dict[str, Any], path: Path) -> None:
+    with open(path / 'config.json', mode='x') as f:
+        json.dump(config, f)

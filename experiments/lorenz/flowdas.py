@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import torchvision.transforms as transforms
 
 import matplotlib.pyplot as plt
-import tqdm
+from tqdm import tqdm
 
 from torch.utils.data import DataLoader, Dataset
 from utils import to
@@ -214,7 +214,10 @@ def save_checkpoint(epoch, model, optimizer, loss, file_path="checkpoint.pth"):
         'optimizer_state_dict': optimizer.state_dict(),
         'loss': loss
     }
-    torch.save(checkpoint, str(file_path) + "checkpoint" + str(epoch) + ".pth")
+    
+    checkpoint_filename = f"checkpoint_{epoch}.pth"
+    save_path = file_path / checkpoint_filename  # This is the correct way to join paths
+    torch.save(checkpoint, str(save_path))
 
 
 def save_best_checkpoint(epoch, model, optimizer, loss, best_model_path="best_model.pth"):
@@ -225,7 +228,9 @@ def save_best_checkpoint(epoch, model, optimizer, loss, best_model_path="best_mo
         'optimizer_state_dict': optimizer.state_dict(),
         'loss': loss
     }
-    torch.save(checkpoint, str(best_model_path) + "best_model" + ".pth")
+    checkpoint_filename = f"best_model.pth"
+    save_path = best_model_path / checkpoint_filename
+    torch.save(checkpoint, str(save_path))
 
 
 def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1000, n_epochs=5000, 

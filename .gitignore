@@ -48,3 +48,11 @@ ENV/
 
 # Reference code
 **/sda/
+
+# Generated files
+**/runs/
+**/data/
+**/logs/
+**/checkpoints/
+**/best_models/
+**/final_models/
