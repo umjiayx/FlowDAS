@@ -38,3 +38,8 @@ def make_chain_generalize(sigma, rho, beta) -> MarkovChain:
 def save_config(config: Dict[str, Any], path: Path) -> None:
     with open(path / 'config.json', mode='x') as f:
         json.dump(config, f)
+
+def load_checkpoint(model,file_path="checkpoint.pth"):
+    checkpoint = torch.load(file_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return model
