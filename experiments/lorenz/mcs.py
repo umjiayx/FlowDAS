@@ -203,6 +203,15 @@ class NoisyLorenz63Generalize(Lorenz63):
         # Pass these parameters to the parent Lorenz63 class
         super().__init__(sigma=sigma, rho=rho, beta=beta, **kwargs)
 
+    def moments(self, x: Tensor) -> Tuple[Tensor, Tensor]:
+        return super().transition(x), self.dt ** 0.5
+
+    def transition(self, x: Tensor) -> Tensor:
+        return Normal(*self.moments(x)).sample()
+
+    def log_prob(self, x1: Tensor, x2: Tensor) -> Tensor:
+        return Normal(*self.moments(x1)).log_prob(x2).sum(dim=-1)
+
 
 class TrajectoryDataset(Dataset):
     def __init__(
