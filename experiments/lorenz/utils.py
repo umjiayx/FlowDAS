@@ -4,6 +4,7 @@ import os
 import json
 from pathlib import Path
 from typing import *
+import numpy as np
 
 from mcs import *
 
@@ -34,6 +35,22 @@ def make_chain() -> MarkovChain:
 
 def make_chain_generalize(sigma, rho, beta) -> MarkovChain:
     return NoisyLorenz63Generalize(dt=0.025, sigma=sigma, rho=rho, beta=beta)
+
+def get_Lorenz_parameters(coeff: float):
+    sigma0_mean = 10.0
+    rho0_mean = 28.0
+    beta0_mean = 8 / 3
+
+    # Physical parameters: Gaussian
+    sigma0_variance = coeff * sigma0_mean  # User-controlled variance parameter
+    rho0_variance = coeff * rho0_mean
+    beta0_variance = coeff * beta0_mean
+
+    sigma = np.random.normal(sigma0_mean, sigma0_variance)
+    rho = np.random.normal(rho0_mean, rho0_variance)
+    beta = np.random.normal(beta0_mean, beta0_variance)
+
+    return sigma, rho, beta
 
 def save_config(config: Dict[str, Any], path: Path) -> None:
     with open(path / 'config.json', mode='x') as f:

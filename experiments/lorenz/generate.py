@@ -7,6 +7,7 @@ from pathlib import Path
 PATH = Path(__file__).parent.absolute()
 log_file = PATH / 'data' / f'data_generation_log.txt'
 
+
 def simulate(dataset_idx: int, N: int, L: int):
     '''
     dataset_idx:
@@ -18,21 +19,9 @@ def simulate(dataset_idx: int, N: int, L: int):
     '''
 
     L0 = 1024 # Warm-up
-
-    sigma0_mean = 10.0
-    rho0_mean = 28.0
-    beta0_mean = 8 / 3
-
     coeff = 0
 
-    # Physical parameters: Gaussian
-    sigma0_variance = coeff * sigma0_mean  # User-controlled variance parameter
-    rho0_variance = coeff * rho0_mean
-    beta0_variance = coeff * beta0_mean
-
-    sigma = np.random.normal(sigma0_mean, sigma0_variance)
-    rho = np.random.normal(rho0_mean, rho0_variance)
-    beta = np.random.normal(beta0_mean, beta0_variance)
+    sigma, rho, beta = get_Lorenz_parameters(coeff=coeff)
 
     chain = make_chain_generalize(sigma=sigma, rho=rho, beta=beta) # When coeff = 0, using standard parameters.
 
