@@ -94,26 +94,30 @@ class ScoreNet(nn.Module):
         return h
 
 
-def loss_fn(model, x, marginal_prob_std=None, eps=1e-5):
-    """The loss function for training score-based generative models.
+def loss_fn(model, x):
+    """
+    The loss function for training score-based generative models.
 
     Args:
-    model: A PyTorch model instance that represents a
-      time-dependent score-based model.
-    x: A mini-batch of training data.
-    marginal_prob_std: A function that gives the standard deviation of
-      the perturbation kernel.
-    eps: A tolerance value for numerical stability.
+    - model: 
+        A PyTorch model instance that represents a time-dependent score-based model.
+    - x: 
+        A mini-batch of training data (according to the prepare_batch function).
+    - marginal_prob_std: 
+        A function that gives the standard deviation of the perturbation kernel.
+    - eps: 
+        A tolerance value for numerical stability.
     """
 
-    zt_squeezed = x['zt']
+    zt_squeezed = x['zt'] # Stochastic Interpolant
     cond_squeezed = x['cond']
-
-    score = model(zt_squeezed.to('cuda:0'), x['t'],extra_elements = cond_squeezed.to('cuda:0'))
     target = x['drift_target']
-    loss = (score - target).pow(2).sum(-1).mean()
+    # device = zt_squeezed.device
 
-    return loss,score.shape[0]
+    score = model(zt_squeezed, x['t'], extra_elements=cond_squeezed)
+    loss = (score - target).pow(2).sum(-1).mean() # Mean Squared Error
+
+    return loss, score.shape[0]
 
 
 def marginal_prob_std(t, sigma):
@@ -143,31 +147,45 @@ def diffusion_coeff(t, sigma):
     return sigma**t
 
 
-def get_time(D):
-    D['t'] = torch.distributions.Uniform(low=0, high=1).sample(sample_shape = (D['z0'].shape[0],1)).to('cuda:0')
-    return D
+def prepare_batch(batch=None, device='cuda:0'):
+    """Process batch data and prepare for training/sampling.
+    
+    Args:
+        batch: Input batch data with shape (N, L-1, 6)
+        device: Device to put tensors on
+        
+    Returns:
+        Dictionary containing processed batch data
+    """
+    # Process input batch
+    assert batch.shape[-1] % 2 == 0, f"Last dimension of batch must be even, got {batch.shape[-1]}"
+    half_dim = batch.shape[-1] // 2
 
-
-def prepare_batch_nse(batch = None, for_sampling = False,sampling_batch_size = None, device = 'cuda:0' ):
-    xlo, xhi = batch[:,:,0:3].view(-1, 3),batch[:,:,3:].view(-1, 3)
-    xlo, xhi = xlo.to(device), xhi.to(device)
+    xlo = batch[:,:,0:half_dim].view(-1, half_dim).to(device) # (N*(L-1), 3*w), i.e., (NL, 3) for simplicity
+    xhi = batch[:,:,half_dim:].view(-1, half_dim).to(device) # (N*(L-1), 3*w), i.e., (NL, 3) for simplicity
     N = xlo.shape[0]
-    y = None
-    D = {'z0': xlo, 'z1': xhi, 'label': y, 'N': N}
-    return D
-
-
-def prepare_batch(batch = None, for_sampling = False):
-    D = prepare_batch_nse(batch, for_sampling = for_sampling)
-    D = get_time(D)
+    
+    # Initialize
     sigma_coef = 1
+    D = {
+        'z0': xlo, # (NL, 3)
+        'z1': xhi, # (NL, 3)
+        'label': None,
+        'N': N
+    }
+
+    # Helper functions
+    def get_time(D):
+        D['t'] = torch.distributions.Uniform(low=0, high=1).sample(sample_shape=(D['z0'].shape[0],1)).to(device)
+        return D
+
     def wide(t):
         return t
 
     def alpha(t):
-        return wide(1-t) 
+        return wide(1-t)
 
-    def alpha_dot(t):
+    def alpha_dot(t): 
         return wide(-1.0 * torch.ones_like(t))
 
     def beta(t):
@@ -177,32 +195,35 @@ def prepare_batch(batch = None, for_sampling = False):
         return wide(2.0 * t)
 
     def sigma(t):
-        return sigma_coef * wide(1-t) 
+        return sigma_coef * wide(1-t)
 
-    def sigma_dot( t):
-        return sigma_coef * wide(-torch.ones_like(t)) 
+    def sigma_dot(t):
+        return sigma_coef * wide(-torch.ones_like(t))
     
     def gamma(t):
         return wide(t.sqrt()) * sigma(t)
 
-    def compute_zt( D):
+    def compute_zt(D):
         return D['at'] * D['z0'] + D['bt'] * D['z1'] + D['gamma_t'] * D['noise']
 
     def compute_target(D):
-        return D['adot'] * D['z0'] + D['bdot'] * D['z1'] +  (D['sdot'] * D['root_t']) * D['noise']
-    
-    D['cond'] = D['z0']
-    D['noise'] = torch.randn_like(D['z0'])
-    D['at'] = alpha(D['t'])
-    D['bt'] = beta(D['t'])
-    D['adot'] = alpha_dot(D['t'])
-    D['bdot'] = beta_dot(D['t'])
-    D['root_t'] = wide(D['t'].sqrt())
-    D['gamma_t'] = gamma(D['t'])
-    D['st'] = sigma(D['t'])
-    D['sdot'] = sigma_dot(D['t'])
-    D['zt'] = compute_zt(D)
-    D['drift_target'] = compute_target(D)
+        return D['adot'] * D['z0'] + D['bdot'] * D['z1'] + (D['sdot'] * D['root_t']) * D['noise']
+
+    # Compute additional quantities
+    D = get_time(D) # (NL, 1)
+    D['cond'] = D['z0'] # (NL, 3)
+    D['noise'] = torch.randn_like(D['z0']) # (NL, 3)
+    D['at'] = alpha(D['t']) # (NL, 1)
+    D['bt'] = beta(D['t']) # (NL, 1)
+    D['adot'] = alpha_dot(D['t']) # (NL, 1)
+    D['bdot'] = beta_dot(D['t']) # (NL, 1)
+    D['root_t'] = wide(D['t'].sqrt()) # (NL, 1)
+    D['gamma_t'] = gamma(D['t']) # (NL, 1)
+    D['st'] = sigma(D['t']) # (NL, 1)
+    D['sdot'] = sigma_dot(D['t']) # (NL, 1)
+    D['zt'] = compute_zt(D) # (NL, 3)
+    D['drift_target'] = compute_target(D) # (NL, 3)
+
     return D
 
 
@@ -233,7 +254,7 @@ def save_best_checkpoint(epoch, model, optimizer, loss, best_model_path="best_mo
     torch.save(checkpoint, str(save_path))
 
 
-def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1000, n_epochs=5000, 
+def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024, n_epochs=5000, 
                 print_interval=100, checkpoint_path="checkpoint.pth", save_interval=500, best_model_path="best_model.pth"):
     
     logger = logging.getLogger(__name__)
@@ -243,8 +264,8 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1000,
     logger.info(f"Checkpoints will be saved every {save_interval} epochs to {checkpoint_path}")
 
     # Load training and validation data
-    data = DataLoader(data, batch_size=256, shuffle=True)
-    val_data = DataLoader(val_data, batch_size=256, shuffle=False) if val_data is not None else None
+    data = DataLoader(data, batch_size=batch_size, shuffle=True)
+    val_data = DataLoader(val_data, batch_size=batch_size, shuffle=False) if val_data is not None else None
     
     logger.info(f"Training Data Loaded: {len(data)} batches of size 256")
     if val_data:
@@ -279,9 +300,10 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1000,
             # Training Loop
             score_model.train()
             for idx, x in enumerate(data):
-                x, kwargs = to(x, device='cuda')
-                x = prepare_batch(batch=x)
-                loss, N_ba = loss_fn(score_model, x)
+                x, kwargs = to(x, device='cuda:0') # x: (B, L-1, 6)
+                x = prepare_batch(batch=x) 
+                # logger.info(f"shapes: {x['z0'].shape}, {x['z1'].shape}, {x['drift_target'].shape}")
+                loss, N_ba = loss_fn(score_model, x) 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -317,6 +339,7 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1000,
                 for val_x in val_data:
                     val_x, val_kwargs = to(val_x, device='cuda')
                     val_x = prepare_batch(batch=val_x)
+                    # logger.info(f"shapes: {val_x['z0'].shape}, {val_x['z1'].shape}, {val_x['drift_target'].shape}")
                     val_loss_batch, N_ba_val = loss_fn(score_model, val_x)
                     val_loss += val_loss_batch.item() * N_ba_val
                     val_items += N_ba_val
@@ -382,34 +405,33 @@ def MC_taylor_est2rd_x1(model ,xt, t, bF, g, label = None, cond = None,MC_times 
 
 
 def grad_and_value_NOEST( x_prev, x_0_hat, measurement, **kwargs):
-            # print('if require grad',x_prev.requires_grad,x_0_hat.requires_grad)
-        # x_0_hat should be a list of tensors, not a single tensor
-        if not isinstance(x_0_hat, list):
-            raise ValueError("x_0_hat must be a list of tensors, not a single tensor")
-        else:
-                x_0_hat = torch.cat(x_0_hat, dim=0).requires_grad_(True)
-                # print("x_0_hat",x_0_hat.shape)
-                # operator = lambda x: F.interpolate(x, size=(16,16), mode='bilinear', align_corners=False)
-                differences = torch.linalg.norm(measurement - torch.atan((x_0_hat))[:,0], dim=0)
-                
-                # Compute the weights
-                weights = -differences / (2 * (0.25)**2) # Yixuan: 0.25 is the std of the Gaussian noise!!!
-                # assert 1==0
+    # x_0_hat should be a list of tensors, not a single tensor
+    if not isinstance(x_0_hat, list):
+        raise ValueError("x_0_hat must be a list of tensors, not a single tensor")
+    else:
+            x_0_hat = torch.cat(x_0_hat, dim=0).requires_grad_(True)
+            # print("x_0_hat",x_0_hat.shape)
+            # operator = lambda x: F.interpolate(x, size=(16,16), mode='bilinear', align_corners=False)
+            differences = torch.linalg.norm(measurement - torch.atan((x_0_hat))[:,0], dim=0)
+            
+            # Compute the weights
+            weights = -differences / (2 * (0.25)**2) # Yixuan: 0.25 is the std of the Gaussian noise!!!
+            # assert 1==0
 
-                # Detach the weights to prevent gradients from flowing through them
-                weights_detached = weights.detach()
+            # Detach the weights to prevent gradients from flowing through them
+            weights_detached = weights.detach()
 
-                # Apply softmax to the detached weights
-                softmax_weights = torch.softmax(weights_detached, dim=0)
+            # Apply softmax to the detached weights
+            softmax_weights = torch.softmax(weights_detached, dim=0)
 
-                # Perform element-wise multiplication
-                result = softmax_weights * differences
+            # Perform element-wise multiplication
+            result = softmax_weights * differences
 
-                # Sum up the results
-                final_result = result.sum()
-                # print('difference norm',final_result)
-                norm_grad = torch.autograd.grad(outputs=final_result, inputs=x_prev,allow_unused=True)[0]
-        return norm_grad, final_result, final_result
+            # Sum up the results
+            final_result = result.sum()
+            # print('difference norm',final_result)
+            norm_grad = torch.autograd.grad(outputs=final_result, inputs=x_prev,allow_unused=True)[0]
+    return norm_grad, final_result, final_result
 
 
 def EM(model,base = None, label= None, cond = None, diffusion_fn = None, num_steps = 500, measurement = None, noisy_level = None, MC_times = 1, step_size=None):
@@ -492,7 +514,6 @@ def Euler_Maruyama_sampler(score_prior, marginal_prob_std,
     batch_size = batch_size
     score_prior.eval()
     cond = cond.repeat(batch_size,1)
-    D = prepare_batch(batch = (cond,cond))
     EM_args = {'base': cond, 'label': None, 'cond': cond}
     
     sample = EM(score_prior,diffusion_fn=None, 

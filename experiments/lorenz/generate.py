@@ -9,14 +9,12 @@ PATH = Path(__file__).parent.absolute()
 
 # Configuration parameters
 config = {
-    'num_datasets': 4,
-    'num_particles': 256,
+    'num_datasets': 50,
+    'num_particles': 128, # 1024
     'len_trajectory': 1024,
     'log_file_path': PATH / 'data' / f'data_generation_log.txt',
-
-    # simulation parameters
     'L0': 1024, # Warm-up
-    'coeff': 0.05
+    'coeff': 0.05 # parameter variation
 }
 
 def simulate(dataset_idx: int, N: int, L: int):
@@ -90,7 +88,7 @@ def combine_datasets(num_datasets):
         
         # Concatenate along first dimension
         combined_data = np.concatenate(all_data, axis=0)
-        
+
         # Save combined data
         with h5py.File(combined_dir / f'{split}.h5', 'w') as f:
             f.create_dataset('x', data=combined_data, dtype=np.float32)

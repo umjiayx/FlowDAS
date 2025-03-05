@@ -223,22 +223,60 @@ class TrajectoryDataset(Dataset):
         super().__init__()
 
         with h5py.File(file, mode='r') as f:
+            # load data from h5 file into the memory
             self.data = f['x'][:]
 
         self.window = window
-        self.flatten = flatten
+        # self.flatten = flatten
 
     def __len__(self) -> int:
         return len(self.data)
 
     def __getitem__(self, i: int) -> Tuple[Tensor, Dict]:
-        x = torch.from_numpy(self.data[i])
-        # print('trajectory',x.shape)
+        x = torch.from_numpy(self.data[i]) # (L, 3)
 
         if self.window is not None:
-            previous = x[:-1]  # All except the last time step (shape [1023])
-            current = x[1:]    # All except the first time step (shape [1023])
+            previous = x[:-1]  # All except the last time step
+            current = x[1:]    # All except the first time step
 
-    # Stack along the second dimension to get shape [1023, 2]
-        x_pairs = x_pairs = torch.cat((previous, current), dim=1)
+        x_pairs = torch.cat((previous, current), dim=1) # (L-1, 6)
         return x_pairs, {}
+    
+
+class TrajectoryDatasetV2(Dataset):
+    """
+    Compared to the TrajectoryDataset, this dataset is designed for using the information
+    from 'several' previous time steps to predict the next time step.
+    The original TrajectoryDataset is when the window is 1.
+    """
+    def __init__(
+        self,
+        file: Path,
+        window: int = None
+    ):
+        super().__init__()
+        self.window = window
+        with h5py.File(file, mode='r') as f:
+            self.data = f['x'][:]
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, i: int) -> Tuple[Tensor, Dict]:
+        x = torch.from_numpy(self.data[i]) # (L, 3)
+
+        if self.window is not None:
+            assert isinstance(self.window, int), "window must be an integer"
+            assert 1 < self.window < x.shape[0], "window must be within range (1, L)"
+
+            # Create sliding windows of size self.window
+            x_pairs = []
+            for i in range(x.shape[0] - self.window):
+                # Concatenate self.window consecutive timesteps
+                window_slice_previous = x[i:i+self.window].reshape(-1)  # Flatten the window into a single vector
+                window_slice_current = x[i+1:i+self.window+1].reshape(-1)
+                x_pairs.append(torch.cat((window_slice_previous, window_slice_current), dim=0))
+            
+            # Stack all windows into a tensor
+            x_pairs = torch.stack(x_pairs)
+            return x_pairs, {} # Shape: (L-window+1, 3*window)
