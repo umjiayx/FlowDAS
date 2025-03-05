@@ -267,7 +267,7 @@ class TrajectoryDatasetV2(Dataset):
 
         if self.window is not None:
             assert isinstance(self.window, int), "window must be an integer"
-            assert 1 < self.window < x.shape[0], "window must be within range (1, L)"
+            assert 0 < self.window < x.shape[0], "window must be within range (1, L)"
 
             # Create sliding windows of size self.window
             x_pairs = []

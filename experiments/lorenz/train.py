@@ -23,7 +23,7 @@ def setup_logging(runpath):
 def get_config():
     """Return training configuration"""
     config = {
-        'window': 2,
+        'window': 3,
         'width': 384, # 256
         'depth': 5, 
         'epochs': 1500, # 10000

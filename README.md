@@ -7,7 +7,7 @@
 The majority of the code is written in [Python](https://www.python.org). Neural networks are built and trained using the [PyTorch](https://pytorch.org/) automatic differentiation framework.
 
 ```
-conda env create -f environment.yml
+conda env create --file environment.yml --prefix /path/to/your/conda/env
 conda activate flowdas
 conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3 -c pytorch
 ```
