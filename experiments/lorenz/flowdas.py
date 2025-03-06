@@ -15,6 +15,8 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader, Dataset
 from utils import to
 
+from mcs import observe
+
 
 class MultiGaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding multiple inputs (e.g., time and extra elements)."""
@@ -381,75 +383,87 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024,
 
 
 def MC_taylor_est2rd_x1(model ,xt, t, bF, g, label = None, cond = None,MC_times = 1, use_original_sigma = True, analytical = True):
-        def clip_x1(x):
-            return torch.clamp(x, min=-3, max=3)
-        if use_original_sigma == True and analytical == False:
-            hat_x1 = xt + bF * (1-t) + g * torch.randn_like(xt) * (1-t).sqrt()
-        elif use_original_sigma == True and analytical == True and MC_times == 1:
-            assert 1==0
-            hat_x1 = xt + bF * (1-t) + torch.randn_like(xt) * (2/3 - t.sqrt()+(1/3) * (t.sqrt())**3)
-            t1 = torch.FloatTensor([1-1e-5])
-            bF2 = model(xt,t1.to(xt.device),extra_elements = cond.to('cuda:0')).requires_grad_(True)
+    """
+    xt.shape: (B, 3*window)
+    """
+    def clip_x1(x):
+        return torch.clamp(x, min=-3, max=3)
+    if use_original_sigma == True and analytical == False:
+        hat_x1 = xt + bF * (1-t) + g * torch.randn_like(xt) * (1-t).sqrt()
+    elif use_original_sigma == True and analytical == True and MC_times == 1:
+        assert 1==0
+        hat_x1 = xt + bF * (1-t) + torch.randn_like(xt) * (2/3 - t.sqrt()+(1/3) * (t.sqrt())**3)
+        t1 = torch.FloatTensor([1-1e-5])
+        bF2 = model(xt,t1.to(xt.device),extra_elements = cond.to('cuda:0')).requires_grad_(True)
+        hat_x1 =  xt + (bF + bF2)/2 * (1-t) + torch.randn_like(xt) * (2/3 - t.sqrt()+(1/3) * (t.sqrt())**3)
+        return hat_x1.requires_grad_(True)
+    elif use_original_sigma == True and analytical == True and MC_times != 1: # Yixuan: We are using this!
+        hat_x1 = xt + bF * (1-t) + torch.randn_like(xt) * (2/3 - t.sqrt()+(1/3) * (t.sqrt())**3)
+        t1 = torch.FloatTensor([1-1e-5])
+        bF2 = model(xt,t1.to(xt.device),extra_elements = cond.to('cuda:0')).requires_grad_(True)
+        hat_x1_list = []
+        for _ in range(MC_times):
             hat_x1 =  xt + (bF + bF2)/2 * (1-t) + torch.randn_like(xt) * (2/3 - t.sqrt()+(1/3) * (t.sqrt())**3)
-            return hat_x1.requires_grad_(True)
-        elif use_original_sigma == True and analytical == True and MC_times != 1: # Yixuan: We are using this!
-            hat_x1 = xt + bF * (1-t) + torch.randn_like(xt) * (2/3 - t.sqrt()+(1/3) * (t.sqrt())**3)
-            t1 = torch.FloatTensor([1-1e-5])
-            bF2 = model(xt,t1.to(xt.device),extra_elements = cond.to('cuda:0')).requires_grad_(True)
-            hat_x1_list = []
-            for i in range(MC_times):
-                hat_x1 =  xt + (bF + bF2)/2 * (1-t) + torch.randn_like(xt) * (2/3 - t.sqrt()+(1/3) * (t.sqrt())**3)
-                # hat_x1 = clip_x1(hat_x1)
-                hat_x1_list.append(hat_x1.requires_grad_(True))
-            return hat_x1_list
+            # hat_x1 = clip_x1(hat_x1)
+            hat_x1_list.append(hat_x1.requires_grad_(True))
+        return hat_x1_list # A list, with MC_times elements, each shape is (B, 3*window).
 
 
-def grad_and_value_NOEST( x_prev, x_0_hat, measurement, **kwargs):
-    # x_0_hat should be a list of tensors, not a single tensor
-    if not isinstance(x_0_hat, list):
-        raise ValueError("x_0_hat must be a list of tensors, not a single tensor")
+def grad_and_value_NOEST(x_prev, x1_hat, measurement, **kwargs):
+    # x1_hat should be a list of tensors, not a single tensor
+    '''
+    The input x1_hat is a list of MC_times tensors, each tensor is the estimated x_0 at a different time step.
+    x_prev is the xt at the previous time step of SI. x_prev.shape: (B, 3*window)
+    '''
+    if not isinstance(x1_hat, list):
+        raise ValueError("x1_hat must be a list of tensors, not a single tensor")
     else:
-            x_0_hat = torch.cat(x_0_hat, dim=0).requires_grad_(True)
-            # print("x_0_hat",x_0_hat.shape)
-            # operator = lambda x: F.interpolate(x, size=(16,16), mode='bilinear', align_corners=False)
-            differences = torch.linalg.norm(measurement - torch.atan((x_0_hat))[:,0], dim=0)
-            
-            # Compute the weights
-            weights = -differences / (2 * (0.25)**2) # Yixuan: 0.25 is the std of the Gaussian noise!!!
-            # assert 1==0
+        x1_hat = torch.cat(x1_hat, dim=0).requires_grad_(True) # (B*MC_times, 3*window)
+        differences = torch.linalg.norm(measurement - observe(x1_hat)[:,-3], dim=0) # -3 means the x of the last xyz
+        
+        # Compute the weights
+        weights = -differences / (2 * (0.25)**2) # Yixuan: 0.25 is the std of the Gaussian noise!!! should be changed to sigma_obs_hi later. 
+        # assert 1==0
 
-            # Detach the weights to prevent gradients from flowing through them
-            weights_detached = weights.detach()
+        # Detach the weights to prevent gradients from flowing through them
+        weights_detached = weights.detach()
 
-            # Apply softmax to the detached weights
-            softmax_weights = torch.softmax(weights_detached, dim=0)
+        # Apply softmax to the detached weights
+        softmax_weights = torch.softmax(weights_detached, dim=0)
 
-            # Perform element-wise multiplication
-            result = softmax_weights * differences
+        # Perform element-wise multiplication
+        result = softmax_weights * differences
 
-            # Sum up the results
-            final_result = result.sum()
-            # print('difference norm',final_result)
-            norm_grad = torch.autograd.grad(outputs=final_result, inputs=x_prev,allow_unused=True)[0]
-    return norm_grad, final_result, final_result
+        # Sum up the results
+        final_result = result.sum()
+        # print('difference norm',final_result)
+        norm_grad_tuple = torch.autograd.grad(outputs=final_result, inputs=x_prev, allow_unused=True)
+        norm_grad = norm_grad_tuple[0] # shape: (B, 3*window)
+
+    return norm_grad, final_result
 
 
-def EM(model,base = None, label= None, cond = None, diffusion_fn = None, num_steps = 500, measurement = None, noisy_level = None, MC_times = 1, step_size=None):
+def EM(model, base=None, label=None, cond=None, diffusion_fn=None, num_steps=500, 
+       measurement=None, noisy_level=None, MC_times=1, step_size=None):
+    """
+    cond.shape: (B, 3*window)
+    """
     steps = num_steps
     tmin, tmax = 0, 1
     ts = torch.linspace(tmin, tmax, steps).type_as(base)
     dt = ts[1] - ts[0]
     ones = torch.ones(base.shape[0]).type_as(base)
-    xt = base.requires_grad_(True)
+    xt = base.requires_grad_(True) # (B, 3*window)
     cycle = True
 
-    def step_fn(model,xt, t, label,cond, measurement,device, diff_list, noisy_level = None, MC_times = 1, step_size=step_size): 
+    def step_fn(model, xt, t, label, cond, measurement, device, diff_list, 
+                noisy_level=None, MC_times=1, step_size=step_size): 
         if t[0] ==0:
             t+=1e-5
         if t[0] ==1:
             t-=1e-5
 
-        bF = model(xt, t.to(xt.device),extra_elements = cond.to('cuda:0')).requires_grad_(True)
+        bF = model(xt, t.to(xt.device), extra_elements=cond.to('cuda:0')).requires_grad_(True)
         def sigma(t):
             return  1-t 
         sigma = sigma(t)
@@ -458,43 +472,47 @@ def EM(model,base = None, label= None, cond = None, diffusion_fn = None, num_ste
         g = sigma
         scale = step_size
 
-        es_x1 = MC_taylor_est2rd_x1(model, xt, t.to(xt.device),bF,g.to(xt.device), cond = cond, MC_times = MC_times)
-        norm_grad, norm, diff_ele = grad_and_value_NOEST(x_prev=xt, x_0_hat=es_x1, measurement=measurement.to(xt.device))
+        es_x1 = MC_taylor_est2rd_x1(model, xt, t.to(xt.device), bF ,g.to(xt.device), cond=cond, MC_times=MC_times)
+        norm_grad, diff_ele = grad_and_value_NOEST(x_prev=xt, x1_hat=es_x1, measurement=measurement.to(xt.device))
+        
         diff_list.append(diff_ele.detach())
-        mu = xt + f * dt
         if norm_grad is None:
             norm_grad = 0
             print('no grad!')
-        xt = mu + g * torch.randn_like(mu) * dt.sqrt() - scale * norm_grad # Yixuan: norm_grad is the DPS gradient
-        return xt, mu, diff_list, es_x1 # return sample and its mean
+
+        xt = xt + f*dt + g*torch.randn_like(xt)*dt.sqrt() - scale*norm_grad # Yixuan: norm_grad is the DPS gradient wrt xsn
+        return xt, diff_list # return sample and its mean
     
     cycle_times = 0
+    
     while cycle and cycle_times < 3:
         diff_list = []
         for i, tscalar in enumerate(ts):
             if tscalar == 1:
                 break
             if i == 0 and (diffusion_fn is not None) :
-                # only need to do this when using other diffusion coefficients that you didn't trvain with
+                # only need to do this when using other diffusion coefficients that you didn't train with
                 # because the drift-to-score conversion has a denominator that features 0 at time 0
                 # if just sampling with "sigma" (the diffusion coefficient you trained with) you
                 # can skip this
                 tscalar = ts[1] # 0 + (1/500)
 
-            xt, mu, diff_list, est_x1 = step_fn(model,xt, tscalar * ones, label = None,cond = cond, measurement = measurement,device = 'cuda:0', diff_list=diff_list, noisy_level = noisy_level, MC_times = MC_times, step_size=step_size)
+            xt, diff_list = step_fn(model, xt, tscalar*ones, label=None, cond=cond, 
+                                    measurement=measurement, device='cuda:0', 
+                                    diff_list=diff_list, noisy_level=noisy_level, 
+                                    MC_times=MC_times, step_size=step_size)
 
-        if abs(diff_list[-1].sum())<3:
+        if abs(diff_list[-1].sum()) < 3: # TODO: why a '3' here?
             cycle = False
 
         cycle_times += 1
-    return xt
+    return xt # shape: (B, 3*window)
 
 
-def Euler_Maruyama_sampler(score_prior, marginal_prob_std, 
-                           diffusion_coeff = None, score_likelihood=None,
-                           batch_size=64,num_steps=1000,device='cpu',
-                           eps=1e-3,cond=None,measurement=None,
-                           noisy_level = None, MC_times = 1, step_size=None):
+def Euler_Maruyama_sampler(score_prior, num_steps=1000, device='cuda:0',
+                           cond=None, measurement=None,
+                           noisy_level=None, MC_times=1, 
+                           batch_size=64, step_size=None):
     """Generate samples from score-based models with the Euler-Maruyama solver.
 
     Args:
@@ -509,15 +527,15 @@ def Euler_Maruyama_sampler(score_prior, marginal_prob_std,
     eps: The smallest time step for numerical stability.
 
     Returns:
-    Samples.
+    Samples. shape: (B, 3*window)
     """
     batch_size = batch_size
     score_prior.eval()
-    cond = cond.repeat(batch_size,1)
+    cond = cond.repeat(batch_size, 1) # (B, 3*window)
     EM_args = {'base': cond, 'label': None, 'cond': cond}
     
     sample = EM(score_prior,diffusion_fn=None, 
-                **EM_args,num_steps = num_steps,
-                measurement = measurement,noisy_level =noisy_level, 
-                MC_times = MC_times, step_size=step_size)
-    return sample
+                **EM_args, num_steps=num_steps,
+                measurement=measurement, noisy_level=noisy_level, 
+                MC_times=MC_times, step_size=step_size)
+    return sample # shape: (B, 3*window)

@@ -276,7 +276,64 @@ class TrajectoryDatasetV2(Dataset):
                 window_slice_previous = x[i:i+self.window].reshape(-1)  # Flatten the window into a single vector
                 window_slice_current = x[i+1:i+self.window+1].reshape(-1)
                 x_pairs.append(torch.cat((window_slice_previous, window_slice_current), dim=0))
-            
-            # Stack all windows into a tensor
             x_pairs = torch.stack(x_pairs)
-            return x_pairs, {} # Shape: (L-window+1, 3*window)
+        else:
+            previous = x[:-1]  # All except the last time step
+            current = x[1:]    # All except the first time step
+            x_pairs = torch.cat((previous, current), dim=1) # (L-1, 6)
+        
+        return x_pairs, {}  # Shape: (L-window+1, 3*(window+1))
+    
+
+
+def observation_generator(x: Tensor, sigma: float) -> Tensor:
+    """
+    Preparing the observation datasets.
+    Input:
+        x.shape: (N, L+w, 3)
+        sigma: float
+    Output:
+        y.shape: (N, L+w, 1)
+    """
+    obs = observe(x[:,:,:1])
+    obs = obs + torch.normal(0, sigma, size=obs.shape)
+    return obs
+
+
+def observe(x: Tensor) -> Tensor:
+    """
+    Input:
+        x.shape: any
+    Output:
+        y.shape: x.shape
+    """
+    return torch.atan(x)
+
+
+def get_obs_win(gt, obs, window):
+    """
+    Deal with window size.
+    Input:
+        gt.shape: (L+w, 3)
+        obs.shape: (L+w, 1)
+        window: int
+    Output:
+        gt_win.shape: (L+w-window+1, 3*window)
+        obs_win.shape: (L+w-window+1, 1)
+    """
+    assert gt.shape[0] >= window, "window must be within range"
+
+    gt_win_list = []
+    obs_win_list = []
+    for i in range(gt.shape[0]+1-window):
+        gt_win = gt[i:i+window, :].reshape(-1)
+        obs_win = obs[i+window-1:i+window, :].reshape(-1)
+        gt_win_list.append(gt_win)
+        obs_win_list.append(obs_win)
+    gt_win = torch.stack(gt_win_list)
+    obs_win = torch.stack(obs_win_list)
+
+    return gt_win, obs_win
+
+
+

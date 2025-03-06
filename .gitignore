@@ -50,7 +50,8 @@ ENV/
 **/sda/
 
 # Generated files
-**/runs/
+**/runs_train/
+**/runs_eval/
 **/data/
 **/logs/
 **/checkpoints/

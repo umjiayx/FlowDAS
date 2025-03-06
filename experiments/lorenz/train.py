@@ -7,8 +7,7 @@ from mcs import *
 from utils import *
 from flowdas import ScoreNet, marginal_prob_std, train_model
 
-def setup_logging(runpath):
-    """Set up logging configuration"""
+def setup_training_logging(runpath):
     log_filename = f'training_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
     log_filepath = runpath / log_filename
     logging.basicConfig(
@@ -20,8 +19,8 @@ def setup_logging(runpath):
         ]
     )
 
+
 def get_config():
-    """Return training configuration"""
     config = {
         'window': 3,
         'width': 384, # 256
@@ -37,6 +36,7 @@ def get_config():
         'use_bn': False
     }
     return config
+
 
 def initialize_model(config, device):
     """Initialize and return the score model"""
@@ -94,11 +94,11 @@ def train(model, config, trainset, validset, runpath):
 if __name__ == "__main__":
     # Create run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    runpath = PATH / 'runs' / f'training_run_{timestamp}'
+    runpath = PATH / 'runs_train' / f'training_run_{timestamp}'
     runpath.mkdir(parents=True, exist_ok=True)
 
     # Initialize logging and config
-    setup_logging(runpath)
+    setup_training_logging(runpath)
     config = get_config()
     logging.info(f"Created run directory at {runpath}")
     logging.info(f"Configuration: {config}")

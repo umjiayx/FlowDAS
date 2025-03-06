@@ -5,8 +5,12 @@ import json
 from pathlib import Path
 from typing import *
 import numpy as np
+import random
+import torch
 
 from mcs import *
+from datetime import datetime
+
 
 if 'SCRATCH' in os.environ:
     SCRATCH = os.environ['SCRATCH']
@@ -60,3 +64,29 @@ def load_checkpoint(model,file_path="checkpoint.pth"):
     checkpoint = torch.load(file_path)
     model.load_state_dict(checkpoint['model_state_dict'])
     return model
+
+
+def compute_nrmse_LT(gt, est, LT):
+    '''
+    Compute the normalized root mean square error (NRMSE) of the estimated trajectory
+    with respect to the ground truth trajectory (the first LT states).
+    '''
+    gt_LT = gt[:LT]
+    est_LT = est[:LT]
+    rmse = torch.sqrt(torch.sum((gt_LT - est_LT) ** 2) / LT)
+    denominator = torch.sqrt(torch.sum(gt_LT ** 2) / LT)
+    nrmse = rmse / denominator
+    return nrmse
+
+
+def compute_mse(gt, est, LT):
+    mse = torch.sum((gt - est) ** 2) / LT
+    return mse
+
+
+def set_seed(seed=427):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)

@@ -5,177 +5,203 @@ import h5py
 import numpy as np
 import torch
 import logging
-import random
+import argparse
+
 from datetime import datetime
 from tqdm import tqdm
-
 from utils import *
 from flowdas import ScoreNet, marginal_prob_std, Euler_Maruyama_sampler
 
-path_dataset = './data/dataset'
 
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-runpath = PATH / 'eval' / f'eval_run_{timestamp}'
-runpath.mkdir(parents=True, exist_ok=True)
-
-log_filename = f"eval_log_{datetime.now().strftime('%y%m%d_%H%M%S')}.log"
-
-log_filepath = runpath / log_filename
-logging.basicConfig(
-    level=logging.INFO,  # Set the logging level
-    format="%(asctime)s - %(message)s",  # Format for the log messages
-    handlers=[
-        logging.FileHandler(log_filepath),  # Log to a file
-        logging.StreamHandler()  # Also log to the terminal
-    ]
-)
-
-# Add the parent directory to sys.path
-script_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.abspath(os.path.join(script_dir, '..', '..'))
-sys.path.insert(0, parent_dir)
+def setup_evaluation_logging(runpath):
+    log_filename = f"eval_log_{datetime.now().strftime('%y%m%d_%H%M%S')}.log"
+    log_filepath = runpath / log_filename
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_filepath),
+            logging.StreamHandler()
+        ]
+    )
 
 
-def set_seed(seed=427):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+def prepare_evaluation():
+    set_seed(427)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    runpath = PATH / 'runs_eval' / f'eval_run_{timestamp}'
+    runpath.mkdir(parents=True, exist_ok=True)
+    setup_evaluation_logging(runpath)
+    logging.info(f"############### Running Evaluation ################")
+
+    # Add the parent directory to sys.path
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.abspath(os.path.join(script_dir, '..', '..'))
+    sys.path.insert(0, parent_dir)
 
 
-def compute_nrmse(gt, est, N_T):
-    rmse = torch.sqrt(torch.sum((gt - est) ** 2) / N_T)
-    denominator = torch.sqrt(torch.sum(gt ** 2) / N_T)
-    nrmse = rmse / denominator
+def get_local_config():
+    config = {
+        'path_dataset' : './data/dataset',
+        'checkpoint_path_win1' : './runs_train/training_run_20250304_225041/best_model.pth',
+        'checkpoint_path_win2' : './runs_train/training_run_20250304_205913/best_model.pth',
+        'checkpoint_path_win3' : './runs_train/training_run_20250304_235046/best_model.pth',
+        'marginal_prob_std_fn': functools.partial(marginal_prob_std, sigma=25.0), # 25?
+        'device': 'cuda:0',
+        'window': 3,
+        'x_dim': 3,
+        'extra_dim': 3,
+        'hidden_depth': 5,
+        'embed_dim': 384,
+        'use_bn': False,
+        'N_MC': 21, # 21
+        'step_size': 0.0002,
+        'num_steps': 600,
+        'freq': 'hi',
+        'N_trajectory': 1, #32,
+        'LT': 15, # 15, # Number of testing states of each trajectory
+        'sigma_obs_hi': 0.25,
+        'sigma_obs_lo': 0.05,
+    }
+    return config
 
-    return nrmse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='FlowDAS Evaluation')
+    # parser.add_argument('--checkpoint_path', type=str, default='./runs_train/training_run_250304_205913/best_model.pth', help='Path to model checkpoint')
+    # parser.add_argument('--device', type=str, default='cuda:0', help='Device to run evaluation on')
+    # parser.add_argument('--N_trajectory', type=int, default=32, help='Number of trajectories to evaluate')
+    # parser.add_argument('--LT', type=int, default=15, help='Number of testing states of each trajectory')
+    # parser.add_argument('--path_dataset', type=str, default='./data/dataset', help='Path to dataset')
+    # parser.add_argument('--window', type=int, default=1, help='Window size')
+    return parser.parse_args()
 
 
-def compute_mse(gt, est, N_T):
-    mse = torch.sum((gt - est) ** 2) / N_T
-    return mse
-
-
-def create_observations():
+def create_observations(config):
     """
     Create the observations for the combined-para dataset.
     The obs.h5 contains the first (L+1) steps of the testing trajectory.
+    Input: 
+        x.shape: (N, L+1, 3)
+    Output: 
+        obs.shape: (N, L+1, 1)
     """
     # Read input data
-    L = 64 # length of the testing trajectory
-    with h5py.File(f'{path_dataset}/test.h5', mode='r') as f:
-        x = f['x'][:,:L+1]
+    with h5py.File(f'{config["path_dataset"]}/test.h5', mode='r') as f:
+        x = f['x'][:,:config['LT']+config['window']] # shape: (N, L+w, 3)
     
     # Delete existing obs.h5 if it exists
-    if os.path.exists(f'{path_dataset}/obs.h5'):
-        os.remove(f'{path_dataset}/obs.h5')
+    if os.path.exists(f'{config["path_dataset"]}/obs.h5'):
+        os.remove(f'{config["path_dataset"]}/obs.h5')
         
-    # Create new obs.h5 file
-    with h5py.File(f'{path_dataset}/obs.h5', mode='w') as f:
-        f.create_dataset('gt', data=x)
+    # Create new obs.h5 file (no need to deal with window size)
+    with h5py.File(f'{config["path_dataset"]}/obs.h5', mode='w') as f:
+        x = torch.from_numpy(x) # shape: (N, L+w, 3)
+        obs = observation_generator(x, config['sigma_obs_hi']) # shape: (N, L+w, 1)
+        # print('creating obs.shape: ',obs.shape)
+        f.create_dataset('obs', data=obs)
 
 
-def run_evaluation():
-    n_mc = 21 # Number of Monte Carlo samples
-    step_size = 0.0002 # Step size
-    freq = 'hi'
-    N_trajectory = 32 # Number of testing trajectories
-    l2_flowdas = []
+def get_flow_prior(config):
+    flow_prior = ScoreNet(
+        marginal_prob_std=config['marginal_prob_std_fn'],
+        x_dim=config['x_dim']*config['window'],
+        extra_dim=config['extra_dim']*config['window'],
+        hidden_depth=config['hidden_depth'],
+        embed_dim=config['embed_dim'],
+        use_bn=config['use_bn']
+    ).to(config['device'])
+
+    if config['window'] == 1:
+        ckp_path = config['checkpoint_path_win1']
+    elif config['window'] == 2:
+        ckp_path = config['checkpoint_path_win2']
+    elif config['window'] == 3:
+        ckp_path = config['checkpoint_path_win3']
+    else:
+        raise ValueError(f"Window size {config['window']} not supported")
+
+    flow_prior = load_checkpoint(flow_prior, ckp_path)
+    return flow_prior
+
+
+def run_evaluation(config):
     nrmse_all = []
-    N_T = 15 # Number of testing states of each trajectory
 
-    for i in range(0, N_trajectory):
-        logging.info(f"Trajectory #: {1+i}/{N_trajectory}")
+    for n in range(0, config['N_trajectory']):
+        logging.info(f"Trajectory #: {1+n}/{config['N_trajectory']}")
+
+        # Ground truth
+        with h5py.File(f'{config["path_dataset"]}/test.h5', mode='r') as f:
+            gt = torch.from_numpy(f['x'][n]).to(config['device']) 
+            gt = gt[:config['LT']+config['window']] # shape: (L+1, 3)
 
         # Observation
-        with h5py.File(f'{path_dataset}/obs.h5', mode='r') as f:
-            gt = torch.from_numpy(f['gt'][i]) # shape: (L+1, 3)
+        with h5py.File(f'{config["path_dataset"]}/obs.h5', mode='r') as f:
+            # TODO: deal with window size.
+            obs = torch.from_numpy(f['obs'][n]).to(config['device']) # shape: (L+1, 1)
 
-        y = torch.atan(gt)[:, :1] # shape: (L+1, 1)
-        y = y + torch.normal(0, 0.25, size=y.shape) # shape: (L+1, 1)
+        flow_prior = get_flow_prior(config)
 
-        if freq == 'lo':
-            sigma_obs, step = 0.05, 8
-        else:
-            sigma_obs, step = 0.25, 1
-        
-        #### Load and prepare the score network (FlowDAS) ####
-        device = 'cuda:0'
-        sigma = 25.0
-        marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=sigma)
-        x_dim = 3
-        hidden_depth = 6
-        embed_dim = 512
-        use_bn = False
-        extra_dim = 3
-
-        flow_prior = ScoreNet(
-            marginal_prob_std=marginal_prob_std_fn,
-            x_dim=x_dim,
-            extra_dim=extra_dim,
-            hidden_depth=hidden_depth,
-            embed_dim=embed_dim,
-            use_bn=use_bn
-        ).to(device)
-        
-        # Load the checkpoint
-        #checkpoint_path = '../../rose-firefly-28_a5jxth6jcheckpoint29000.pth'
-        #score_prior_old = load_checkpoint(score_prior_old, checkpoint_path)
-
-        checkpoint_path = './runs_stochastic_gen_jiayx_right_3/training_runbest_model.pth'
-        flow_prior = load_checkpoint(flow_prior, checkpoint_path)
+        # Deal with window size.
+        # gt_win.shape: (L+1-window+1, 3*window)
+        # obs_win.shape: (L+1-window+1, 1)
+        gt_win, obs_win = get_obs_win(gt, obs, config['window']) 
 
         # Monte Carlo sampling
-        #est_all = []
-        est_all = []
-        #est_all.append(gt[0, :].to(device))
-        est_all.append(gt[0, :].to(device))
+        est_all_win = []
+        est_all_win.append(gt_win[0, :].to(config['device']).unsqueeze(0)) # because batch size is 1...
 
-        for i in tqdm(range(N_T - 1), desc="Monte Carlo sampling"):
+        # Generating the trajectory
+        for i in tqdm(range(config['LT'] - 1), desc="Monte Carlo sampling"):
             x_t_gen = Euler_Maruyama_sampler(
                 flow_prior,
-                marginal_prob_std_fn,
-                num_steps=600,
-                device=device,
-                cond=est_all[i],
-                measurement=y[i + 1, :],
-                noisy_level=sigma_obs,
-                MC_times=n_mc, 
-                batch_size=1, 
-                step_size=step_size 
-            )
+                num_steps=config['num_steps'],
+                device=config['device'],
+                cond=est_all_win[i],
+                measurement=obs_win[i+1, :],
+                noisy_level=config['sigma_obs_hi'],
+                MC_times=config['N_MC'], 
+                batch_size=1, # TODO: why batch size is 1?
+                step_size=config['step_size'] 
+            ) # shape: (B, 3*window)
 
-            #est_all.append(x_t)
-            est_all.append(x_t_gen)
+            est_all_win.append(x_t_gen)
+
+        # Deal with window size: (B, 3*window) -> (B, 3)
+        est_all = [est_all_win[i][:, -3:] for i in range(len(est_all_win))]
 
         # Compute metrics
-        est_all[0] = est_all[0].unsqueeze(0)
         est_all_tensor = torch.cat(est_all, dim=0)
-        #l2_generalize = compute_nrmse(gt[:N_T], est_all_tensor.detach().cpu()[:N_T], N_T)
-
-        nrmse = compute_nrmse(gt[:N_T], est_all_tensor.detach().cpu()[:N_T], N_T)
-        #logging.info(f"FlowDAS - L2: {l2_separate.item()}")
-        #l2_flowdas.append(l2_separate)
+        nrmse = compute_nrmse_LT(gt, est_all_tensor.detach(), config['LT'])
         logging.info(f"FlowDAS - NRMSE: {nrmse.item()}")
         nrmse_all.append(nrmse)
     
-    # averaged_l2_flowdas = sum(l2_flowdas)/N_trajectory
-    averaged_nrmse = sum(nrmse_all)/N_trajectory
-    # logging.info(f"Averaged L2_FlowDAS for dataset {idx+1}: {averaged_l2_flowdas}")
-    return averaged_nrmse # , averaged_l2_flowdas
-
+    averaged_nrmse = sum(nrmse_all)/config['N_trajectory']
+    logging.info(f"Averaged NRMSE of FlowDAS across {config['N_trajectory']} testing trajectories: {averaged_nrmse}")
 
 
 if __name__ == "__main__":
-    """
-    For separate parameter settings.
-    """
-    # random.seed(427)
-    set_seed(427)
-    logging.info(f"############### Creating Observations and Running Evaluation ################")
-    create_observations()
-    averaged_nrmse = run_evaluation()
-    # logging.info(f"Averaged L2_FlowDAS for combined dataset: {l2_combined}")
-    logging.info(f"Averaged NRMSE of FlowDAS for the dataset: {averaged_nrmse}")
-
+    prepare_evaluation()
+    
+    # Get default config and update with command line arguments
+    config = get_local_config()
+    args = parse_args()
+    
+    # Update config with command line arguments
+    for key, value in vars(args).items():
+        if value is not None and key in config:
+            # Only update if the user explicitly specified this argument
+            if key in args.__dict__ and args.__dict__[key] is not None:
+                config[key] = value
+            # logging.info(f"Setting {key} to {value} from command line arguments")
+    
+    # Log the configuration
+    logging.info("Evaluation configuration:")
+    for key, value in config.items():
+        #logging.info(f"  {key}: {value}")
+        pass
+    
+    create_observations(config)
+    run_evaluation(config)
