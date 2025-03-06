@@ -269,9 +269,9 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024,
     data = DataLoader(data, batch_size=batch_size, shuffle=True)
     val_data = DataLoader(val_data, batch_size=batch_size, shuffle=False) if val_data is not None else None
     
-    logger.info(f"Training Data Loaded: {len(data)} batches of size 256")
+    logger.info(f"Training Data Loaded: {len(data)} batches of size {batch_size}")
     if val_data:
-        logger.info(f"Validation Data Loaded: {len(val_data)} batches of size 256")
+        logger.info(f"Validation Data Loaded: {len(val_data)} batches of size {batch_size}")
 
     optimizer = Adam(score_model.parameters(), lr=lr)
     scheduler = LambdaLR(optimizer, lr_lambda=lambda t: 1 - (t / n_epochs))

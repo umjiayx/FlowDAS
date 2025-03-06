@@ -26,7 +26,7 @@ def get_config():
         'width': 384, # 256
         'depth': 5, 
         'epochs': 1500, # 10000
-        'batch_size': 256,
+        'batch_size': 256, # 1024, need to change learning rate accordingly, and consider num_workers
         'optimizer': 'Adam',
         'learning_rate': 5e-3,
         'scheduler': 'linear',
