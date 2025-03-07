@@ -66,13 +66,13 @@ def load_checkpoint(model,file_path="checkpoint.pth"):
     return model
 
 
-def compute_nrmse_LT(gt, est, LT):
+def compute_nrmse_LT(gt, est, LT, window):
     '''
     Compute the normalized root mean square error (NRMSE) of the estimated trajectory
     with respect to the ground truth trajectory (the first LT states).
     '''
-    gt_LT = gt[:LT]
-    est_LT = est[:LT]
+    gt_LT = gt[window:LT+window]
+    est_LT = est[window:LT+window]
     rmse = torch.sqrt(torch.sum((gt_LT - est_LT) ** 2) / LT)
     denominator = torch.sqrt(torch.sum(gt_LT ** 2) / LT)
     nrmse = rmse / denominator

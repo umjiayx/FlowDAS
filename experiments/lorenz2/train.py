@@ -110,14 +110,17 @@ def train(model, config, trainset, validset, runpath):
 
 
 if __name__ == "__main__":
+    config = get_config()
+
     # Create run directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    runpath = PATH / 'runs_train' / f'training_run_{timestamp}'
+    timestamp = datetime.now().strftime("%m%d_%H%M%S")
+    runpath = PATH / 'runs_train' / f'run_{timestamp}_win={config["window"]}'
     runpath.mkdir(parents=True, exist_ok=True)
+    config['runpath'] = runpath
 
     # Initialize logging and config
     setup_training_logging(runpath)
-    config = get_config()
+    
     logging.info(f"Created run directory at {runpath}")
     logging.info(f"Configuration: {config}")
 

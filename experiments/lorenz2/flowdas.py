@@ -17,6 +17,7 @@ from utils import to
 
 from mcs import observe
 
+import time
 
 class MultiGaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding multiple inputs (e.g., time and extra elements)."""
@@ -450,7 +451,7 @@ def grad_and_value_NOEST(x_prev, x1_hat, measurement, **kwargs):
         # print('difference norm',final_result)
         norm_grad_tuple = torch.autograd.grad(outputs=final_result, inputs=x_prev, allow_unused=True)
         norm_grad = norm_grad_tuple[0] # shape: (B, 3*window)
-
+    
     return norm_grad, final_result
 
 
@@ -517,6 +518,7 @@ def EM(model, base=None, label=None, cond=None, diffusion_fn=None, num_steps=500
             cycle = False
 
         cycle_times += 1
+    
     return xt # shape: (B, 3*window)
 
 
