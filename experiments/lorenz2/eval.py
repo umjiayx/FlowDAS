@@ -44,12 +44,12 @@ def prepare_evaluation():
 def get_local_config():
     config = {
         'path_dataset' : './data/dataset',
-        'checkpoint_path_win1' : './runs_train/training_run_20250304_225041/best_model.pth',
-        'checkpoint_path_win2' : './runs_train/training_run_20250304_205913/best_model.pth',
-        'checkpoint_path_win3' : './runs_train/training_run_20250304_235046/best_model.pth',
+        'checkpoint_path_win1' : '',
+        'checkpoint_path_win2' : '',
+        'checkpoint_path_win3' : '',
         'marginal_prob_std_fn': functools.partial(marginal_prob_std, sigma=25.0), # 25?
         'device': 'cuda:0',
-        'window': 3,
+        'window': 2,
         'x_dim': 3,
         'extra_dim': 3,
         'hidden_depth': 5,
@@ -63,6 +63,7 @@ def get_local_config():
         'LT': 15, # 15, # Number of testing states of each trajectory
         'sigma_obs_hi': 0.25,
         'sigma_obs_lo': 0.05,
+        'prev_stats_as_cond': True
     }
     return config
 
@@ -74,7 +75,7 @@ def parse_args():
     # parser.add_argument('--N_trajectory', type=int, default=32, help='Number of trajectories to evaluate')
     # parser.add_argument('--LT', type=int, default=15, help='Number of testing states of each trajectory')
     # parser.add_argument('--path_dataset', type=str, default='./data/dataset', help='Path to dataset')
-    # parser.add_argument('--window', type=int, default=1, help='Window size')
+    parser.add_argument('--window', type=int, required=True, help='Window size')
     return parser.parse_args()
 
 
@@ -113,18 +114,26 @@ def get_flow_prior(config):
         use_bn=config['use_bn']
     ).to(config['device'])
 
-    if config['window'] == 1:
-        ckp_path = config['checkpoint_path_win1']
-    elif config['window'] == 2:
-        ckp_path = config['checkpoint_path_win2']
-    elif config['window'] == 3:
-        ckp_path = config['checkpoint_path_win3']
-    else:
+    try:
+        ckp_path = config[f'checkpoint_path_win{config["window"]}']
+    except KeyError:
         raise ValueError(f"Window size {config['window']} not supported")
 
     flow_prior = load_checkpoint(flow_prior, ckp_path)
     return flow_prior
 
+
+def construct_new_cond(current_cond, x_t_gen):
+    """
+    Input:
+        current_cond.shape: (1, 3*window)
+        x_t_gen.shape: (1, 3)
+    Output:
+        new_cond.shape: (1, 3*window)
+    """
+    tmp = current_cond[:, 3:].clone()
+    new_cond = torch.cat([tmp, x_t_gen], dim=1)
+    return new_cond
 
 def run_evaluation(config):
     nrmse_all = []
@@ -147,19 +156,23 @@ def run_evaluation(config):
         # Deal with window size.
         # gt_win.shape: (L+1-window+1, 3*window)
         # obs_win.shape: (L+1-window+1, 1)
-        gt_win, obs_win = get_obs_win(gt, obs, config['window']) 
+        # gt_win, obs_win = get_obs_win(gt, obs, config['window']) 
+        gt_win, obs_win = gt, obs
+        initial_cond = gt[:config['window']].reshape(1, -1)
 
         # Monte Carlo sampling
-        est_all_win = []
-        est_all_win.append(gt_win[0, :].to(config['device']).unsqueeze(0)) # because batch size is 1...
-
+        cond_win = []
+        cond_win.append(initial_cond)
+        est_all_win = [gt[l, :].unsqueeze(0) for l in range(config['window'])]
+        
         # Generating the trajectory
         for i in tqdm(range(config['LT'] - 1), desc="Monte Carlo sampling"):
             x_t_gen = Euler_Maruyama_sampler(
                 flow_prior,
                 num_steps=config['num_steps'],
                 device=config['device'],
-                cond=est_all_win[i],
+                base=est_all_win[i+config['window']-1],
+                cond=cond_win[i],
                 measurement=obs_win[i+1, :],
                 noisy_level=config['sigma_obs_hi'],
                 MC_times=config['N_MC'], 
@@ -168,9 +181,12 @@ def run_evaluation(config):
             ) # shape: (B, 3*window)
 
             est_all_win.append(x_t_gen)
+            new_cond = construct_new_cond(cond_win[i], x_t_gen)
+            cond_win.append(new_cond)
 
         # Deal with window size: (B, 3*window) -> (B, 3)
-        est_all = [est_all_win[i][:, -3:] for i in range(len(est_all_win))]
+        # est_all = [est_all_win[i][:, -3:] for i in range(len(est_all_win))]
+        est_all = est_all_win
 
         # Compute metrics
         est_all_tensor = torch.cat(est_all, dim=0)

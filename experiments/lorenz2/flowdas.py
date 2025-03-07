@@ -75,9 +75,6 @@ class ScoreNet(nn.Module):
             if t.dim() ==1 :
                 t = t.unsqueeze(-1)
             te = torch.cat([t, extra_elements], dim=-1)  # Shape: [batch_size, input_dim]
-
-            print(f"extra_elements.shape: {extra_elements.shape}, t.shape: {t.shape}, te.shape: {te.shape}")
-            print(f"t[:10]: {t[:10]}")
         else:
             te = t.unsqueeze(-1)  # Shape: [batch_size, 1]
 
@@ -118,7 +115,6 @@ def loss_fn(model, x):
     cond_squeezed = x['cond']
     target = x['drift_target']
     # device = zt_squeezed.device
-
     score = model(zt_squeezed, x['t'], extra_elements=cond_squeezed)
     loss = (score - target).pow(2).sum(-1).mean() # Mean Squared Error
 
@@ -152,7 +148,7 @@ def diffusion_coeff(t, sigma):
     return sigma**t
 
 
-def prepare_batch(batch=None, device='cuda:0'):
+def prepare_batch(batch=None, device='cuda:0', config=None):
     """Process batch data and prepare for training/sampling.
     
     Args:
@@ -170,12 +166,19 @@ def prepare_batch(batch=None, device='cuda:0'):
     xlo = batch[:,:,0:half_dim].view(-1, half_dim) # (N*(L-1), 3*w), i.e., (NL, 3) for simplicity
     xhi = batch[:,:,half_dim:].view(-1, half_dim) # (N*(L-1), 3*w), i.e., (NL, 3) for simplicity
     N = xlo.shape[0]
+
+    if config['prev_stats_as_cond']:
+        z0 = xlo[:, -3:]
+        z1 = xhi[:, -3:]
+    else:
+        z0 = xlo
+        z1 = xhi
     
     # Initialize
     sigma_coef = 1
     D = {
-        'z0': xlo, # (NL, 3)
-        'z1': xhi, # (NL, 3)
+        'z0': z0, 
+        'z1': z1, 
         'label': None,
         'N': N
     }
@@ -217,7 +220,7 @@ def prepare_batch(batch=None, device='cuda:0'):
 
     # Compute additional quantities
     D = get_time(D) # (NL, 1)
-    D['cond'] = D['z0'] # (NL, 3)
+    D['cond'] = xlo # (NL, 3)
     D['noise'] = torch.randn_like(D['z0']) # (NL, 3)
     D['at'] = alpha(D['t']) # (NL, 1)
     D['bt'] = beta(D['t']) # (NL, 1)
@@ -261,7 +264,7 @@ def save_best_checkpoint(epoch, model, optimizer, loss, best_model_path="best_mo
 
 
 def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024, n_epochs=5000, num_workers=16,
-                checkpoint_path="checkpoint.pth", save_interval=500, best_model_path="best_model.pth"):
+                checkpoint_path="checkpoint.pth", save_interval=500, best_model_path="best_model.pth", config=None):
     
     logger = logging.getLogger(__name__)
 
@@ -311,7 +314,7 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024,
             score_model.train()
             for idx, x in enumerate(data):
                 x, kwargs = to(x, device='cuda:0') # x: (B, L-1, 6)
-                x = prepare_batch(batch=x) 
+                x = prepare_batch(batch=x, config=config) 
                 # logger.info(f"shapes: {x['z0'].shape}, {x['z1'].shape}, {x['drift_target'].shape}")
                 loss, N_ba = loss_fn(score_model, x) 
                 optimizer.zero_grad()
@@ -348,7 +351,7 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024,
             with torch.no_grad():  # Disable gradient computation
                 for val_x in val_data:
                     val_x, val_kwargs = to(val_x, device='cuda')
-                    val_x = prepare_batch(batch=val_x)
+                    val_x = prepare_batch(batch=val_x, config=config)
                     # logger.info(f"shapes: {val_x['z0'].shape}, {val_x['z1'].shape}, {val_x['drift_target'].shape}")
                     val_loss_batch, N_ba_val = loss_fn(score_model, val_x)
                     val_loss += val_loss_batch.item() * N_ba_val
@@ -518,6 +521,7 @@ def EM(model, base=None, label=None, cond=None, diffusion_fn=None, num_steps=500
 
 
 def Euler_Maruyama_sampler(score_prior, num_steps=1000, device='cuda:0',
+                           base=None,
                            cond=None, measurement=None,
                            noisy_level=None, MC_times=1, 
                            batch_size=64, step_size=None):
@@ -540,7 +544,8 @@ def Euler_Maruyama_sampler(score_prior, num_steps=1000, device='cuda:0',
     batch_size = batch_size
     score_prior.eval()
     cond = cond.repeat(batch_size, 1) # (B, 3*window)
-    EM_args = {'base': cond, 'label': None, 'cond': cond}
+    base = base.repeat(batch_size, 1) # (B, 3*window)
+    EM_args = {'base': base, 'label': None, 'cond': cond}
     
     sample = EM(score_prior,diffusion_fn=None, 
                 **EM_args, num_steps=num_steps,

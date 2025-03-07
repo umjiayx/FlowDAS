@@ -36,7 +36,7 @@ So, it's better to set num_workers to a large number.
 
 def get_config():
     config = {
-        'window': 2,
+        'window': 3,
         'width': 384, # 256
         'depth': 5, 
         'epochs': 1500, # 10000
@@ -49,7 +49,8 @@ def get_config():
         'x_dim': 3,
         'use_bn': False,
         'save_interval': 500,
-        'num_workers': int(subprocess.check_output(['nproc']).strip())
+        'num_workers': int(subprocess.check_output(['nproc']).strip()),
+        'prev_stats_as_cond': True
     }
     return config
 
@@ -58,7 +59,7 @@ def initialize_model(config, device):
     """Initialize and return the score model"""
     marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=config['sigma'])
     flow_prior = ScoreNet(marginal_prob_std=marginal_prob_std_fn, 
-                         x_dim=config['x_dim']*config['window'], 
+                         x_dim=config['x_dim'], 
                          extra_dim=config['extra_dim']*config['window'], # extra_dim is x0
                          hidden_depth=config['depth'], 
                          embed_dim=config['width'], 
@@ -103,7 +104,8 @@ def train(model, config, trainset, validset, runpath):
                             checkpoint_path=runpath, 
                             best_model_path=runpath,
                             num_workers=config['num_workers'],
-                            save_interval=config['save_interval'])
+                            save_interval=config['save_interval'],
+                            config=config)
     return loss_train
 
 
