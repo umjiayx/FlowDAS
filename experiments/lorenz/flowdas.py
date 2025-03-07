@@ -162,9 +162,10 @@ def prepare_batch(batch=None, device='cuda:0'):
     # Process input batch
     assert batch.shape[-1] % 2 == 0, f"Last dimension of batch must be even, got {batch.shape[-1]}"
     half_dim = batch.shape[-1] // 2
-
-    xlo = batch[:,:,0:half_dim].view(-1, half_dim).to(device) # (N*(L-1), 3*w), i.e., (NL, 3) for simplicity
-    xhi = batch[:,:,half_dim:].view(-1, half_dim).to(device) # (N*(L-1), 3*w), i.e., (NL, 3) for simplicity
+    # batch = batch.to(device)
+    
+    xlo = batch[:,:,0:half_dim].view(-1, half_dim) # (N*(L-1), 3*w), i.e., (NL, 3) for simplicity
+    xhi = batch[:,:,half_dim:].view(-1, half_dim) # (N*(L-1), 3*w), i.e., (NL, 3) for simplicity
     N = xlo.shape[0]
     
     # Initialize
@@ -256,8 +257,8 @@ def save_best_checkpoint(epoch, model, optimizer, loss, best_model_path="best_mo
     torch.save(checkpoint, str(save_path))
 
 
-def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024, n_epochs=5000, 
-                print_interval=100, checkpoint_path="checkpoint.pth", save_interval=500, best_model_path="best_model.pth"):
+def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024, n_epochs=5000, num_workers=16,
+                checkpoint_path="checkpoint.pth", save_interval=500, best_model_path="best_model.pth"):
     
     logger = logging.getLogger(__name__)
 
@@ -266,8 +267,12 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024,
     logger.info(f"Checkpoints will be saved every {save_interval} epochs to {checkpoint_path}")
 
     # Load training and validation data
-    data = DataLoader(data, batch_size=batch_size, shuffle=True)
-    val_data = DataLoader(val_data, batch_size=batch_size, shuffle=False) if val_data is not None else None
+    # Yixuan: num_workers and pin_memory=True is important for speed
+    data = DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, prefetch_factor=4, persistent_workers=True)
+    val_data = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, prefetch_factor=4, persistent_workers=True) if val_data is not None else None
+
+    # data = DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=16, pin_memory=True, prefetch_factor=2, persistent_workers=True)
+    # val_data = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=16, pin_memory=True, prefetch_factor=2, persistent_workers=True) if val_data is not None else None
     
     logger.info(f"Training Data Loaded: {len(data)} batches of size {batch_size}")
     if val_data:

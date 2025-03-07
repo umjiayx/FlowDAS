@@ -7,6 +7,8 @@ from mcs import *
 from utils import *
 from flowdas import ScoreNet, marginal_prob_std, train_model
 
+import subprocess # to determine the number of workers
+
 def setup_training_logging(runpath):
     log_filename = f'training_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
     log_filepath = runpath / log_filename
@@ -20,20 +22,34 @@ def setup_training_logging(runpath):
     )
 
 
+"""
+Suppose you have B batches of data, This B depends on the batch_size and number of your total data.
+The num_workers should not be larger than B! If larger, some workers will be idle.
+If batch_size is too large, the memory can be too large to handle efficiently, which then becomes the bottleneck.
+If batch_size is small, the GPU can keep receiving data from the CPU, though GPU memory is not fully utilized.
+
+Here, the Lorenz dataset is pretty small, the main bottleneck is the data preprocessing on CPU memory.
+So, it's better to set num_workers to a large number.
+"""
+
+
+
 def get_config():
     config = {
-        'window': 3,
+        'window': 2,
         'width': 384, # 256
         'depth': 5, 
         'epochs': 1500, # 10000
-        'batch_size': 256, # 1024, need to change learning rate accordingly, and consider num_workers
+        'batch_size': 64, # 1024, need to change learning rate accordingly, and consider num_workers
         'optimizer': 'Adam',
         'learning_rate': 5e-3,
         'scheduler': 'linear',
         'sigma': 25.0,
         'extra_dim': 3,
         'x_dim': 3,
-        'use_bn': False
+        'use_bn': False,
+        'save_interval': 500,
+        'num_workers': int(subprocess.check_output(['nproc']).strip())
     }
     return config
 
@@ -84,10 +100,10 @@ def train(model, config, trainset, validset, runpath):
                             lr=config['learning_rate'], 
                             batch_size=config['batch_size'],
                             n_epochs=config['epochs'], 
-                            print_interval=100, 
                             checkpoint_path=runpath, 
                             best_model_path=runpath,
-                            save_interval=1000)
+                            num_workers=config['num_workers'],
+                            save_interval=config['save_interval'])
     return loss_train
 
 

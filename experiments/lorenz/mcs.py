@@ -269,14 +269,18 @@ class TrajectoryDatasetV2(Dataset):
             assert isinstance(self.window, int), "window must be an integer"
             assert 0 < self.window < x.shape[0], "window must be within range (1, L)"
 
-            # Create sliding windows of size self.window
-            x_pairs = []
-            for i in range(x.shape[0] - self.window):
-                # Concatenate self.window consecutive timesteps
-                window_slice_previous = x[i:i+self.window].reshape(-1)  # Flatten the window into a single vector
-                window_slice_current = x[i+1:i+self.window+1].reshape(-1)
-                x_pairs.append(torch.cat((window_slice_previous, window_slice_current), dim=0))
-            x_pairs = torch.stack(x_pairs)
+            L = x.shape[0] - self.window
+            x_previous = torch.cat([x[i:i + L].unsqueeze(1) for i in range(self.window)], dim=1)
+            x_current = torch.cat([x[i+1:i + L + 1].unsqueeze(1) for i in range(self.window)], dim=1)
+            x_pairs = torch.cat((x_previous.reshape(L, -1), x_current.reshape(L, -1)), dim=1)
+
+            # for i in range(x.shape[0] - self.window):
+            #     # TODO: This can be vectorized, but I am too lazy to do so.!!! Oh, I am not too lazy... :)
+            #     # Concatenate self.window consecutive timesteps
+            #     window_slice_previous = x[i:i+self.window].reshape(-1)  # Flatten the window into a single vector
+            #     window_slice_current = x[i+1:i+self.window+1].reshape(-1)
+            #     x_pairs.append(torch.cat((window_slice_previous, window_slice_current), dim=0))
+            # x_pairs = torch.stack(x_pairs)
         else:
             previous = x[:-1]  # All except the last time step
             current = x[1:]    # All except the first time step

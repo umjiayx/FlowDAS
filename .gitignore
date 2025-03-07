@@ -57,3 +57,4 @@ ENV/
 **/checkpoints/
 **/best_models/
 **/final_models/
+**/testing/
