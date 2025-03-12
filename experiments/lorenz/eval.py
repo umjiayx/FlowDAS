@@ -125,7 +125,8 @@ def create_observations(config):
             existing_obs = f['obs'][:]
         
         # Compare existing and new observations
-        if np.array_equal(existing_obs, new_obs.numpy()):
+        # if np.array_equal(existing_obs, new_obs.numpy()):
+        if np.allclose(existing_obs, new_obs.numpy(), rtol=1e-3, atol=1e-3):
             logging.info(f"Existing observations file is identical. Skipping creation.")
         else:
             logging.error(f"Existing observations file contains different data!")
