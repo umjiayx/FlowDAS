@@ -50,9 +50,9 @@ ENV/
 **/sda/
 
 # Debug
-**/lorenz0/
-**/lorenz1/
-**/lorenz2/
+**/lorenz0/** 
+**/lorenz1/** */
+**/lorenz2/** 
 
 # Generated files
 **/runs_train/
