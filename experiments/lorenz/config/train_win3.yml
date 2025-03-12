@@ -6,7 +6,7 @@ depth: 5    # Network depth
 epochs: 3000  # Total training epochs
 batch_size: 64  # Batch size for training
 optimizer: Adam
-learning_rate: 5.0e-3
+learning_rate: 2.0e-3 # 5.0e-3
 scheduler: linear
 sigma: 25.0
 extra_dim: 3
