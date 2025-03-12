@@ -251,7 +251,7 @@ def save_checkpoint(epoch, model, optimizer, loss, file_path="checkpoint.pth"):
     torch.save(checkpoint, str(save_path))
 
 
-def save_best_checkpoint(epoch, model, optimizer, loss, best_model_path="best_model.pth"):
+def save_best_checkpoint(epoch, model, optimizer, loss, best_model_path, checkpoint_path):
     print(f"Saving best model at epoch {epoch}.")
     checkpoint = {
         'epoch': epoch,
@@ -260,8 +260,10 @@ def save_best_checkpoint(epoch, model, optimizer, loss, best_model_path="best_mo
         'loss': loss
     }
     checkpoint_filename = f"best_model.pth"
-    save_path = best_model_path / checkpoint_filename
-    torch.save(checkpoint, str(save_path))
+    save_path_best = best_model_path / checkpoint_filename
+    save_path_checkpoint = checkpoint_path / checkpoint_filename
+    torch.save(checkpoint, str(save_path_best))
+    torch.save(checkpoint, str(save_path_checkpoint))
 
 
 def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024, n_epochs=5000, num_workers=16,
@@ -374,7 +376,7 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024,
                 best_val_loss = epoch_val_loss
                 logger.info(f"New best validation loss: {best_val_loss:.4f}. Saving best model...")
                 model_to_save = score_model.module if hasattr(score_model, 'module') else score_model
-                save_best_checkpoint(epoch, model_to_save, optimizer, best_val_loss, best_model_path)
+                save_best_checkpoint(epoch, model_to_save, optimizer, best_val_loss, best_model_path, checkpoint_path)
                 logger.info("Best model saved successfully.")
 
         # ---------- PERIODIC CHECKPOINT SAVING ----------
@@ -391,7 +393,8 @@ def train_model(score_model, data=None, val_data=None, lr=1e-4, batch_size=1024,
     if val_data:
         logger.info(f"Final Validation Loss: {val_loss_history[-1]:.4f}")
 
-    return train_loss, val_loss_history
+    # return train_loss, val_loss_history
+    return score_model
 
 
 def MC_taylor_est2rd_x1(model ,xt, t, bF, g, label = None, cond = None,MC_times = 1, use_original_sigma = True, analytical = True):
@@ -432,6 +435,7 @@ def grad_and_value_NOEST(x_prev, x1_hat, measurement, **kwargs):
     else:
         x1_hat = torch.cat(x1_hat, dim=0).requires_grad_(True) # (B*MC_times, 3*window)
         differences = torch.linalg.norm(measurement - observe(x1_hat)[:,-3], dim=0) # -3 means the x of the last xyz
+        # print(f"x1_hat.shape: {x1_hat.shape}, measurement.shape: {measurement.shape}")
         
         # Compute the weights
         weights = -differences / (2 * (0.25)**2) # Yixuan: 0.25 is the std of the Gaussian noise!!! should be changed to sigma_obs_hi later. 

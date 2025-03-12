@@ -84,7 +84,7 @@ def compute_mse(gt, est, LT):
     return mse
 
 
-def set_seed(seed=427):
+def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

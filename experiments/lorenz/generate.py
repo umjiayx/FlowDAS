@@ -4,20 +4,13 @@ import numpy as np
 from datetime import datetime
 from pathlib import Path
 import shutil
+import yaml
+import argparse
 
 PATH = Path(__file__).parent.absolute()
 
-# Configuration parameters
-config = {
-    'num_datasets': 50,
-    'num_particles': 128, # 1024
-    'len_trajectory': 1024,
-    'log_file_path': PATH / 'data' / f'data_generation_log.txt',
-    'L0': 1024, # Warm-up
-    'coeff': 0.05 # parameter variation
-}
 
-def simulate(dataset_idx: int, N: int, L: int):
+def simulate(dataset_idx: int, config: dict):
     '''
     dataset_idx:
         Generate/Simulate the dataset_idx th dataset.
@@ -26,6 +19,9 @@ def simulate(dataset_idx: int, N: int, L: int):
     L:
         Trajectory length.
     '''
+
+    N = config['num_particles']
+    L = config['len_trajectory']
 
     sigma, rho, beta = get_Lorenz_parameters(coeff=config['coeff'])
 
@@ -49,12 +45,12 @@ def simulate(dataset_idx: int, N: int, L: int):
     }
 
     # Create dataset directory
-    dataset_dir = PATH / 'data' / str(dataset_idx)
+    dataset_dir = config['data_dir'] / str(dataset_idx)
     dataset_dir.mkdir(parents=True, exist_ok=True)
 
-    for name, x in splits.items():
+    for name, data in splits.items():
         with h5py.File(dataset_dir / f'{name}.h5', mode='w') as f:
-            f.create_dataset('x', data=x, dtype=np.float32)
+            f.create_dataset('data', data=data, dtype=np.float32)
     
     # Log the parameters
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -66,12 +62,14 @@ def simulate(dataset_idx: int, N: int, L: int):
     print(f'Dataset {dataset_idx} generated!')
 
 
-def combine_datasets(num_datasets):
+def combine_datasets(config: dict):
+    num_datasets = config['num_datasets']
+
     # Combine all datasets into single files
     print("Combining datasets...")
 
     # Create combined directory
-    combined_dir = PATH / 'data' / 'dataset'
+    combined_dir = config['data_dir'] / 'dataset'
     if combined_dir.exists():
         shutil.rmtree(combined_dir)
     combined_dir.mkdir(parents=True, exist_ok=True)
@@ -81,9 +79,9 @@ def combine_datasets(num_datasets):
         # Collect data from all dataset folders
         all_data = []
         for dataset_idx in range(num_datasets):
-            dataset_path = PATH / 'data' / str(dataset_idx) / f'{split}.h5'
+            dataset_path = config['data_dir'] / str(dataset_idx) / f'{split}.h5'
             with h5py.File(dataset_path, 'r') as f:
-                data = f['x'][:]
+                data = f['data'][:]
                 all_data.append(data)
         
         # Concatenate along first dimension
@@ -91,7 +89,7 @@ def combine_datasets(num_datasets):
 
         # Save combined data
         with h5py.File(combined_dir / f'{split}.h5', 'w') as f:
-            f.create_dataset('x', data=combined_data, dtype=np.float32)
+            f.create_dataset('data', data=combined_data, dtype=np.float32)
         
         print(f'Combined {split} dataset shape: {combined_data.shape}')
 
@@ -99,16 +97,16 @@ def combine_datasets(num_datasets):
 
     # Reorganize and relocate datasets
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    timestamp_dir = PATH / 'data' / timestamp    
+    timestamp_dir = config['data_dir'] / timestamp    
     timestamp_dir.mkdir(parents=True, exist_ok=True)
     
     for i in range(num_datasets):
-        dataset_path = PATH / 'data' / str(i)
+        dataset_path = config['data_dir'] / str(i)
         if dataset_path.exists():
             # Move individual dataset folder to timestamp directory
             shutil.move(dataset_path, timestamp_dir / str(i))
 
-    combined_path = PATH / 'data' / 'dataset'
+    combined_path = config['data_dir'] / 'dataset'
     if combined_path.exists():
         shutil.copytree(combined_path, timestamp_dir / 'dataset')
 
@@ -122,16 +120,48 @@ def combine_datasets(num_datasets):
         f.write('\n')
 
 
+def get_config(config_path: Path):
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    return config
+
+
 def prepare():
+    parser = argparse.ArgumentParser(description='Generate Lorenz datasets')
+    parser.add_argument('--config', type=str, default='generate_Lorenz_data',
+                        help='Name of the config file in the config directory')
+    parser.add_argument('--num_datasets', type=int, default=1,
+                        help='Number of datasets to generate')
+    parser.add_argument('--num_particles', type=int, default=64,
+                        help='Number of particles to generate')
+    args = parser.parse_args()
+    
+    config_path = PATH / 'config' / f'{args.config}.yml'
+    config = get_config(config_path)
+
+    if args.num_datasets:
+        config['num_datasets'] = args.num_datasets
+    if args.num_particles:
+        config['num_particles'] = args.num_particles
+
+    if config['study_generalizability']:
+        config['data_dir'] = PATH / 'data_gen'
+    else:
+        config['data_dir'] = PATH / 'data'
+        
+    config['log_file_path'] = config['data_dir'] / config['log_file_name']
+
     # Create dataset directory if it doesn't exist
-    data_dir = PATH / 'data'
-    if not data_dir.exists():
-        data_dir.mkdir(parents=True, exist_ok=True)
+    if not config['data_dir'].exists():
+        config['data_dir'].mkdir(parents=True, exist_ok=True)
 
     # Log the start time
     log_entry = f"Dataset generation started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"    
     with open(config['log_file_path'], 'a') as f:
         f.write(log_entry)
+
+    return config
 
 
 if __name__ == "__main__":
@@ -139,10 +169,10 @@ if __name__ == "__main__":
     This script generates multiple datasets (with different parameters) and then combines them into a single dataset. 
     The user can specify the number of datasets to generate. A naive choice is to generate only one dataset.
     """
-
-    prepare()
+    
+    config = prepare()
 
     for i in range(config['num_datasets']):
-        simulate(dataset_idx=i, N=config['num_particles'], L=config['len_trajectory'])
+        simulate(dataset_idx=i, config=config)
     
-    combine_datasets(config['num_datasets'])
+    combine_datasets(config=config)

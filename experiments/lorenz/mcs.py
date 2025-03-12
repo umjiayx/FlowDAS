@@ -218,16 +218,14 @@ class TrajectoryDataset(Dataset):
         self,
         file: Path,
         window: int = None,
-        flatten: bool = False,
     ):
         super().__init__()
 
         with h5py.File(file, mode='r') as f:
             # load data from h5 file into the memory
-            self.data = f['x'][:]
+            self.data = f['data'][:]
 
         self.window = window
-        # self.flatten = flatten
 
     def __len__(self) -> int:
         return len(self.data)
@@ -257,7 +255,7 @@ class TrajectoryDatasetV2(Dataset):
         super().__init__()
         self.window = window
         with h5py.File(file, mode='r') as f:
-            self.data = f['x'][:]
+            self.data = f['data'][:]
 
     def __len__(self) -> int:
         return len(self.data)
@@ -299,6 +297,8 @@ def observation_generator(x: Tensor, sigma: float) -> Tensor:
     Output:
         y.shape: (N, L+w, 1)
     """
+    assert x.ndim == 3, "The dimension of x must be 3"
+    assert x.shape[2] == 3, "The third dimension of x must be 3"
     obs = observe(x[:,:,:1])
     obs = obs + torch.normal(0, sigma, size=obs.shape)
     return obs

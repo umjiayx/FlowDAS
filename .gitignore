@@ -49,10 +49,16 @@ ENV/
 # Reference code
 **/sda/
 
+# Debug
+**/lorenz0/
+**/lorenz1/
+**/lorenz2/
+
 # Generated files
 **/runs_train/
 **/runs_eval/
 **/data/
+**/data_gen/
 **/logs/
 **/checkpoints/
 **/best_models/

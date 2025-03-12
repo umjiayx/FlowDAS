@@ -1,0 +1,7 @@
+study_generalizability: True
+num_datasets: 50
+num_particles: 128  # 1024
+len_trajectory: 1024
+log_file_name: data_generation_log.txt
+L0: 1024  # Warm-up
+coeff: 0.05  # parameter variation

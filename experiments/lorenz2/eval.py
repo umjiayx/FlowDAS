@@ -6,105 +6,14 @@ import torch
 import logging
 import argparse
 import shutil
-
+import yaml
 from datetime import datetime
 from tqdm import tqdm
 from utils import *
 from flowdas import ScoreNet, marginal_prob_std, Euler_Maruyama_sampler
-
+import subprocess
 import matplotlib.pyplot as plt
 from glob import glob
-
-
-def setup_evaluation_logging(runpath):
-    log_filename = f"eval_log_{datetime.now().strftime('%y%m%d_%H%M%S')}.log"
-    log_filepath = runpath / log_filename
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_filepath),
-            logging.StreamHandler()
-        ]
-    )
-
-
-def get_local_config():
-    config = {
-        'path_dataset1' : './data/dataset',
-        'path_dataset2' : './data/dataset',
-        'path_dataset3' : './data/dataset',
-        'checkpoint_path_win1' : './runs_train/training_run_20250306_212902/best_model.pth',
-        'checkpoint_path_win2' : './runs_train/training_run_20250306_212216/best_model.pth',
-        'checkpoint_path_win3' : './runs_train/training_run_20250306_212948/best_model.pth',
-        'marginal_prob_std_fn': functools.partial(marginal_prob_std, sigma=25.0), # 25?
-        'device': 'cuda:0',
-        'window': 2,
-        'x_dim': 3,
-        'extra_dim': 3,
-        'hidden_depth': 5,
-        'embed_dim': 384,
-        'use_bn': False,
-        'N_MC': 21, # 21
-        'step_size': 0.0002,
-        'num_steps': 600,
-        'freq': 'hi',
-        'N_trajectory': 32, #32,
-        'LT': 15, # 15, # Number of testing states of each trajectory
-        'sigma_obs_hi': 0.25,
-        'sigma_obs_lo': 0.05,
-        'prev_stats_as_cond': True
-    }
-    return config
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='FlowDAS Evaluation')
-    # parser.add_argument('--checkpoint_path', type=str, default='./runs_train/training_run_250304_205913/best_model.pth', help='Path to model checkpoint')
-    # parser.add_argument('--device', type=str, default='cuda:0', help='Device to run evaluation on')
-    # parser.add_argument('--N_trajectory', type=int, default=32, help='Number of trajectories to evaluate')
-    # parser.add_argument('--LT', type=int, default=15, help='Number of testing states of each trajectory')
-    # parser.add_argument('--path_dataset', type=str, default='./data/dataset', help='Path to dataset')
-    parser.add_argument('--window', type=int, required=True, help='Window size')
-    return parser.parse_args()
-
-
-def prepare_evaluation():
-    set_seed(427)
-    # Add the parent directory to sys.path
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.abspath(os.path.join(script_dir, '..', '..'))
-    sys.path.insert(0, parent_dir)
-    
-    # Get default config and update with command line arguments
-    config = get_local_config()
-    args = parse_args()
-
-    assert config['LT'] >= config['window'], "LT must be greater than or equal to window"
-    
-    # Update config with command line arguments
-    for key, value in vars(args).items():
-        if value is not None and key in config:
-            # Only update if the user explicitly specified this argument
-            if key in args.__dict__ and args.__dict__[key] is not None:
-                config[key] = value
-            # logging.info(f"Setting {key} to {value} from command line arguments")
-    
-    timestamp = datetime.now().strftime("%m%d_%H%M%S")
-    runpath = PATH / 'runs_eval' / f'run_{timestamp}_win={config["window"]}_N={config["N_trajectory"]}_L={config["LT"]}'
-    runpath.mkdir(parents=True, exist_ok=True)
-    config['runpath'] = runpath
-    
-    setup_evaluation_logging(runpath)
-
-    # Log the configuration
-    logging.info("Evaluation configuration:")
-    for key, value in config.items():
-        logging.info(f"  {key}: {value}")
-    
-    logging.info("\n\n")
-
-    return config
 
 
 def visualize(config):
@@ -179,30 +88,53 @@ def visualize(config):
 
 def create_observations(config):
     """
-    Create the observations for the combined-para dataset.
-    The obs.h5 contains the first (L+1) steps of the testing trajectory.
-    Input: 
-        x.shape: (N, L+1, 3)
-    Output: 
-        obs.shape: (N, L+1, 1)
+    Create observation files for the combined-para dataset.
+    
+    The obs.h5 file contains the first (L+1) steps of the testing trajectory.
+    
+    Args:
+        config: Configuration dictionary with parameters
+        
+    Input data shape: 
+        x: (N, L+1, 3) - N trajectories with L+1 timesteps of 3D coordinates
+        
+    Output data shape:
+        obs: (N, L+1, 1) - Observations for each trajectory and timestep
     """
     logging.info("Creating observations...")
     path_dataset = config[f'path_dataset{config["window"]}']
     
+    # Define the observation file path
+    obs_file_path = f'{path_dataset}/obs.h5'
+    
     # Read input data
     with h5py.File(f'{path_dataset}/test.h5', mode='r') as f:
-        x = f['x'][:,:config['LT']+config['window']] # shape: (N, L+w, 3)
+        x = f['x'][:, :config['LT']+config['window']]  # shape: (N, L+w, 3)
     
-    # Delete existing obs.h5 if it exists
-    if os.path.exists(f'{path_dataset}/obs_win={config["window"]}.h5'):
-        os.remove(f'{path_dataset}/obs_win={config["window"]}.h5')
+    # Check if the observation file already exists
+    if os.path.exists(obs_file_path):
+        # Generate what the new observations would be
+        x_tensor = torch.from_numpy(x)
+        new_obs = observation_generator(x_tensor, config['sigma_obs_hi'])
         
-    # Create new obs.h5 file (no need to deal with window size)
-    with h5py.File(f'{path_dataset}/obs_win={config["window"]}.h5', mode='w') as f:
-        x = torch.from_numpy(x) # shape: (N, L+w, 3)
-        obs = observation_generator(x, config['sigma_obs_hi']) # shape: (N, L+w, 1)
-        # print('creating obs.shape: ',obs.shape)
-        f.create_dataset('obs', data=obs)
+        # Load existing observations
+        with h5py.File(obs_file_path, mode='r') as f:
+            existing_obs = f['obs'][:]
+        
+        # Compare existing and new observations
+        if np.array_equal(existing_obs, new_obs.numpy()):
+            logging.info(f"Existing observations file is identical. Skipping creation.")
+        else:
+            logging.error(f"Existing observations file contains different data!")
+            logging.error(f"This requires attention. Exiting evaluation.")
+            sys.exit(1)
+    else:
+        # Create new observations file
+        with h5py.File(obs_file_path, mode='w') as f:
+            x_tensor = torch.from_numpy(x)
+            obs = observation_generator(x_tensor, config['sigma_obs_hi'])
+            f.create_dataset('obs', data=obs)
+            logging.info(f"Created new observations file at {obs_file_path}")
 
     logging.info("Observations created successfully.\n\n")
 
@@ -307,9 +239,119 @@ def run_evaluation(config):
     logging.info(f"Averaged NRMSE of FlowDAS across {config['N_trajectory']} testing trajectories: {averaged_nrmse:.4f} ± {std_nrmse:.4f}\n\n")
 
 
-if __name__ == "__main__":
-    config = prepare_evaluation()
+
+def setup_evaluation_logging(runpath):
+    log_filename = f"eval_log_{datetime.now().strftime('%y%m%d_%H%M%S')}.log"
+    log_filepath = runpath / log_filename
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_filepath),
+            logging.StreamHandler()
+        ]
+    )
+
+
+def get_config(config_path: Path):
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
+
+def prepare():
+    set_seed(427)
+
+    parser = argparse.ArgumentParser(description='FlowDAS Evaluation')
+    parser.add_argument('--config', type=str, default='eval_win1_G.yml', help='Path to evaluation config')
+    args = parser.parse_args()
     
-    create_observations(config)
+    config_path = PATH / 'config' / args.config
+    config = get_config(config_path)
+
+
+    # Create a path that includes both timestamp and config name (without extension)
+    timestamp = datetime.now().strftime("%m%d_%H%M%S")
+    runpath = PATH / 'runs_train' / f'run_{timestamp}_{args.config.split(".")[0]}'
+    runpath.mkdir(parents=True, exist_ok=True)
+    setup_evaluation_logging(runpath)
+
+
+    # Log the configuration
+    logging.info("Evaluation configuration:")
+    for key, value in config.items():
+        logging.info(f"  {key}: {value}")
+    
+    logging.info("\n\n")    
+
+
+    # Update config with runpath and num_workers
+    assert config['LT'] >= config['window'], "LT must be greater than or equal to window"
+    config['runpath'] = runpath
+    config['num_workers'] = int(subprocess.check_output(['nproc']).strip())
+    config['marginal_prob_std_fn'] = functools.partial(marginal_prob_std, sigma=config['sigma'])
+
+    return config
+
+
+if __name__ == "__main__":
+    config = prepare()
+    
+    # create_observations(config)
     run_evaluation(config)
     visualize(config)
+
+
+
+
+'''
+def parse_args():
+    parser = argparse.ArgumentParser(description='FlowDAS Evaluation')
+    # parser.add_argument('--checkpoint_path', type=str, default='./runs_train/training_run_250304_205913/best_model.pth', help='Path to model checkpoint')
+    # parser.add_argument('--device', type=str, default='cuda:0', help='Device to run evaluation on')
+    # parser.add_argument('--N_trajectory', type=int, default=32, help='Number of trajectories to evaluate')
+    # parser.add_argument('--LT', type=int, default=15, help='Number of testing states of each trajectory')
+    # parser.add_argument('--path_dataset', type=str, default='./data/dataset', help='Path to dataset')
+    parser.add_argument('--window', type=int, required=True, help='Window size')
+    return parser.parse_args()
+
+
+
+
+def prepare_evaluation():
+    set_seed(427)
+    # Add the parent directory to sys.path
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.abspath(os.path.join(script_dir, '..', '..'))
+    sys.path.insert(0, parent_dir)
+    
+    # Get default config and update with command line arguments
+    config = get_local_config()
+    args = parse_args()
+
+    assert config['LT'] >= config['window'], "LT must be greater than or equal to window"
+    
+    # Update config with command line arguments
+    for key, value in vars(args).items():
+        if value is not None and key in config:
+            # Only update if the user explicitly specified this argument
+            if key in args.__dict__ and args.__dict__[key] is not None:
+                config[key] = value
+            # logging.info(f"Setting {key} to {value} from command line arguments")
+    
+    timestamp = datetime.now().strftime("%m%d_%H%M%S")
+    runpath = PATH / 'runs_eval' / f'run_{timestamp}_win={config["window"]}_N={config["N_trajectory"]}_L={config["LT"]}'
+    runpath.mkdir(parents=True, exist_ok=True)
+    config['runpath'] = runpath
+    
+    setup_evaluation_logging(runpath)
+
+    # Log the configuration
+    logging.info("Evaluation configuration:")
+    for key, value in config.items():
+        logging.info(f"  {key}: {value}")
+    
+    logging.info("\n\n")
+
+    return config
+'''

@@ -66,15 +66,17 @@ def load_checkpoint(model,file_path="checkpoint.pth"):
     return model
 
 
-def compute_nrmse_LT(gt, est, LT):
+def compute_nrmse_LT(gt, est, LT, window):
     '''
     Compute the normalized root mean square error (NRMSE) of the estimated trajectory
     with respect to the ground truth trajectory (the first LT states).
+    gt: (L+w, 3)
+    est: (L+w, 3)
     '''
-    gt_LT = gt[:LT]
-    est_LT = est[:LT]
-    rmse = torch.sqrt(torch.sum((gt_LT - est_LT) ** 2) / LT)
-    denominator = torch.sqrt(torch.sum(gt_LT ** 2) / LT)
+    gt_LT = gt[window:LT+window]
+    est_LT = est[window:LT+window]
+    rmse = torch.sqrt(torch.mean((gt_LT - est_LT) ** 2))
+    denominator = torch.sqrt(torch.mean(gt_LT ** 2))
     nrmse = rmse / denominator
     return nrmse
 
@@ -84,7 +86,7 @@ def compute_mse(gt, est, LT):
     return mse
 
 
-def set_seed(seed=427):
+def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

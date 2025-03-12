@@ -8,18 +8,11 @@ from utils import *
 from flowdas import ScoreNet, marginal_prob_std, train_model
 
 import subprocess # to determine the number of workers
+import argparse
+import yaml
+from pathlib import Path
 
-def setup_training_logging(runpath):
-    log_filename = f'training_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
-    log_filepath = runpath / log_filename
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_filepath),
-            logging.StreamHandler()
-        ]
-    )
+PATH = Path(__file__).parent.absolute()
 
 
 """
@@ -33,32 +26,11 @@ So, it's better to set num_workers to a large number.
 """
 
 
-
-def get_config():
-    config = {
-        'window': 2,
-        'width': 384, # 256
-        'depth': 5, 
-        'epochs': 1500, # 10000
-        'batch_size': 64, # 1024, need to change learning rate accordingly, and consider num_workers
-        'optimizer': 'Adam',
-        'learning_rate': 5e-3,
-        'scheduler': 'linear',
-        'sigma': 25.0,
-        'extra_dim': 3,
-        'x_dim': 3,
-        'use_bn': False,
-        'save_interval': 500,
-        'num_workers': int(subprocess.check_output(['nproc']).strip())
-    }
-    return config
-
-
 def initialize_model(config, device):
     """Initialize and return the score model"""
     marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=config['sigma'])
     flow_prior = ScoreNet(marginal_prob_std=marginal_prob_std_fn, 
-                         x_dim=config['x_dim']*config['window'], 
+                         x_dim=config['x_dim'], 
                          extra_dim=config['extra_dim']*config['window'], # extra_dim is x0
                          hidden_depth=config['depth'], 
                          embed_dim=config['width'], 
@@ -75,68 +47,120 @@ def initialize_model(config, device):
     trainable_params = sum(p.numel() for p in flow_prior.parameters() if p.requires_grad)
     logging.info(f"Total parameters: {total_params:,}")
     logging.info(f"Trainable parameters: {trainable_params:,}")
+    logging.info("Model initialized and moved to device: %s", config['device'])
     return flow_prior
 
 
-def load_datasets():
-    """Load and return training and validation datasets"""
-    trainset = TrajectoryDataset(PATH / 'data/dataset/train.h5', window=config['window'], flatten=True)
-    validset = TrajectoryDataset(PATH / 'data/dataset/valid.h5', window=config['window'], flatten=True)
-    return trainset, validset
-
-
-def load_datasets_V2():
-    """Load and return training and validation datasets"""
-    trainset = TrajectoryDatasetV2(PATH / 'data/dataset/train.h5', window=config['window'])
-    validset = TrajectoryDatasetV2(PATH / 'data/dataset/valid.h5', window=config['window'])
+def load_datasets(config):
+    # Determine dataset paths based on generalizability study flag
+    data_dir = 'data_gen' if config['study_generalizability'] else 'data'
+    dataset_class = TrajectoryDatasetV2 # if config['study_generalizability'] else TrajectoryDataset
+    
+    # Load datasets
+    train_path = PATH / f'{data_dir}/dataset/train.h5'
+    valid_path = PATH / f'{data_dir}/dataset/valid.h5'
+    trainset = dataset_class(train_path, window=config['window'])
+    validset = dataset_class(valid_path, window=config['window'])
+    
+    # Log dataset information
+    logging.info(f"Loaded training dataset from {train_path} with {len(trainset)} samples")
+    logging.info(f"Loaded validation dataset from {valid_path} with {len(validset)} samples")
+    
     return trainset, validset
 
 
 def train(model, config, trainset, validset, runpath):
     """Train the model and save checkpoints"""
-    loss_train = train_model(score_model=model, 
-                            data=trainset, 
-                            val_data=validset,
-                            lr=config['learning_rate'], 
-                            batch_size=config['batch_size'],
-                            n_epochs=config['epochs'], 
-                            checkpoint_path=runpath, 
-                            best_model_path=runpath,
-                            num_workers=config['num_workers'],
-                            save_interval=config['save_interval'])
-    return loss_train
+    logging.info("Starting model training...")
+    model = train_model(score_model=model, 
+                data=trainset, 
+                val_data=validset,
+                lr=config['learning_rate'], 
+                batch_size=config['batch_size'],
+                n_epochs=config['epochs'], 
+                checkpoint_path=runpath, 
+                best_model_path=config['best_model_path'],
+                num_workers=config['num_workers'],
+                save_interval=config['save_interval'],
+                config=config)
+    logging.info("Model training completed.")
+    # Save final model
+    final_model_path = config['runpath'] / 'final_model.pth'
+    torch.save(model.state_dict(), final_model_path)
+    logging.info(f"Final model saved to {final_model_path}")    
+    return model
 
 
-if __name__ == "__main__":
-    # Create run directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    runpath = PATH / 'runs_train' / f'training_run_{timestamp}'
+def setup_training_logging(runpath):
+    log_filename = f'training_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+    log_filepath = runpath / log_filename
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_filepath),
+            logging.StreamHandler()
+        ]
+    )
+
+
+def get_config(config_path: Path):
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
+
+def prepare():
+    parser = argparse.ArgumentParser(description='Train Lorenz model')
+    parser.add_argument('--config', type=str, default='train_win1_G',
+                        help='Name of the config file in the config directory')
+    parser.add_argument('--epochs', type=int, default=3000,
+                        help='Number of epochs to train')
+    args = parser.parse_args()
+    
+    config_path = PATH / 'config' / f'{args.config}.yml'
+    config = get_config(config_path)
+    
+    # Override epochs in config if specified in command line
+    if args.epochs:
+        config['epochs'] = args.epochs
+    
+    # Create a path that includes both timestamp and config name (without extension)
+    timestamp = datetime.now().strftime("%m%d_%H%M%S")
+    runpath = PATH / 'runs_train' / f'run_{timestamp}_{args.config}'
     runpath.mkdir(parents=True, exist_ok=True)
 
+    # Update config with runpath and num_workers
+    config['runpath'] = runpath
+    config['num_workers'] = int(subprocess.check_output(['nproc']).strip())
+
+    best_model_path = PATH / 'runs_train' / 'best_models' / f'{args.config}'
+    config['best_model_path'] = best_model_path
+    best_model_path.mkdir(parents=True, exist_ok=True)
+
     # Initialize logging and config
-    setup_training_logging(runpath)
-    config = get_config()
-    logging.info(f"Created run directory at {runpath}")
+    setup_training_logging(config['runpath'])
+    
+    logging.info(f"Created run directory at {config['runpath']}")
     logging.info(f"Configuration: {config}")
 
-    # Setup device and model
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    flow_prior = initialize_model(config, device)
-    logging.info("Model initialized and moved to device: %s", device)
+    config['device'] = device
 
+    return config
+    
+
+if __name__ == "__main__":
+    # Prepare config
+    config = prepare()
+
+    # Initialize model
+    flow_prior = initialize_model(config, config['device'])
+    
     # Load datasets
-    # trainset, validset = load_datasets()
-    trainset, validset = load_datasets_V2()
-    logging.info(f"Loaded training dataset with {len(trainset)} samples")
-    logging.info(f"Loaded validation dataset with {len(validset)} samples")
+    trainset, validset = load_datasets(config)
 
     # Train model
-    logging.info("Starting model training...")
-    loss_train = train(flow_prior, config, trainset, validset, runpath)
-    logging.info(f"Training completed with final loss: {loss_train[-1]}")
+    flow_prior = train(flow_prior, config, trainset, validset, config['runpath'])
 
-    # Save final model
-    final_model_path = runpath / 'final_model.pth'
-    torch.save(flow_prior.state_dict(), final_model_path)
-    logging.info(f"Final model saved to {final_model_path}")
-    logging.info(f"Training complete. Model and logs saved in: {runpath}")
+    logging.info(f"Training complete. Model and logs saved in: {config['runpath']}")
