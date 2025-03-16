@@ -7,10 +7,11 @@ from typing import *
 import numpy as np
 import random
 import torch
-
+import yaml
 from mcs import *
 from datetime import datetime
-
+import argparse
+import math
 
 if 'SCRATCH' in os.environ:
     SCRATCH = os.environ['SCRATCH']
@@ -33,6 +34,11 @@ def to(x: Any, **kwargs) -> Any:
     else:
         return x
 
+def get_config(config_path: Path):
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    return config
 
 def make_chain() -> MarkovChain:
     return NoisyLorenz63(dt=0.025)
@@ -92,3 +98,49 @@ def set_seed(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+
+
+def prepare_generate():
+    parser = argparse.ArgumentParser(description='Generate Lorenz datasets')
+    parser.add_argument('--config', type=str, default='generate_Lorenz_data',
+                        help='Name of the config file in the config directory')
+    parser.add_argument('--num_datasets', type=int, 
+                        help='Number of datasets to generate')
+    parser.add_argument('--num_particles', type=int, 
+                        help='Number of particles to generate')
+    args = parser.parse_args()
+    
+    config_path = PATH / 'config' / f'{args.config}.yml'
+    config = get_config(config_path)
+
+    # Only update config if the arguments were explicitly provided
+    if args.num_datasets is not None:
+        config['num_datasets'] = args.num_datasets
+    if args.num_particles is not None:
+        config['num_particles'] = args.num_particles
+
+    # Studying generalization of FlowDAS
+    if config['study_generalizability']:
+        config['data_dir'] = PATH / 'data_gen'
+    else:
+        config['data_dir'] = PATH / 'data'
+
+    # Studying memorization and generalization of FlowDAS
+    if config['study_Mem_Gen']:
+        dataset_size = int(math.log2(config['num_datasets'])) + int(math.log2(config['num_particles']))
+        config['data_dir'] = PATH / f'data_gen_memgen_datasize{dataset_size}'
+
+    config['log_file_path'] = config['data_dir'] / config['log_file_name']
+
+    # Create dataset directory if it doesn't exist
+    if not config['data_dir'].exists():
+        config['data_dir'].mkdir(parents=True, exist_ok=True)
+
+    # Log the start time
+    log_entry = f"Dataset generation started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"    
+    with open(config['log_file_path'], 'a') as f:
+        f.write(log_entry)
+
+    return config

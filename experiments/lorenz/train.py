@@ -54,6 +54,7 @@ def initialize_model(config, device):
 def load_datasets(config):
     # Determine dataset paths based on generalizability study flag
     data_dir = 'data_gen' if config['study_generalizability'] else 'data'
+    data_dir = f'data_gen_memgen_datasize{config["dataset_size"]}' if config['study_Mem_Gen'] else data_dir
     dataset_class = TrajectoryDatasetV2 # if config['study_generalizability'] else TrajectoryDataset
     
     # Load datasets
@@ -112,9 +113,9 @@ def get_config(config_path: Path):
 
 def prepare():
     parser = argparse.ArgumentParser(description='Train Lorenz model')
-    parser.add_argument('--config', type=str, default='train_win1_G',
+    parser.add_argument('--config', type=str, # default='train_win1_G',
                         help='Name of the config file in the config directory')
-    parser.add_argument('--epochs', type=int, default=3000,
+    parser.add_argument('--epochs', type=int, # default=5000,
                         help='Number of epochs to train')
     args = parser.parse_args()
     
@@ -122,7 +123,7 @@ def prepare():
     config = get_config(config_path)
     
     # Override epochs in config if specified in command line
-    if args.epochs:
+    if args.epochs is not None:
         config['epochs'] = args.epochs
     
     # Create a path that includes both timestamp and config name (without extension)

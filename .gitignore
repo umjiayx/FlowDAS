@@ -53,12 +53,14 @@ ENV/
 **/lorenz0/** 
 **/lorenz1/**
 **/lorenz2/** 
+jyx.py
 
 # Generated files
 **/runs_train/
 **/runs_eval/
 **/data/
 **/data_gen/
+**/data_gen_*
 **/logs/
 **/checkpoints/
 **/best_models/

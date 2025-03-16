@@ -86,6 +86,11 @@ def combine_datasets(config: dict):
         
         # Concatenate along first dimension
         combined_data = np.concatenate(all_data, axis=0)
+        
+        # Use different but deterministic seeds for different splits and shuffle the combined data!
+        split_seeds = {'train': 42, 'valid': 43, 'test': 44}
+        rng = np.random.default_rng(seed=split_seeds[split])
+        rng.shuffle(combined_data)
 
         # Save combined data
         with h5py.File(combined_dir / f'{split}.h5', 'w') as f:
@@ -120,57 +125,14 @@ def combine_datasets(config: dict):
         f.write('\n')
 
 
-def get_config(config_path: Path):
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    return config
-
-
-def prepare():
-    parser = argparse.ArgumentParser(description='Generate Lorenz datasets')
-    parser.add_argument('--config', type=str, default='generate_Lorenz_data',
-                        help='Name of the config file in the config directory')
-    parser.add_argument('--num_datasets', type=int, default=1,
-                        help='Number of datasets to generate')
-    parser.add_argument('--num_particles', type=int, default=64,
-                        help='Number of particles to generate')
-    args = parser.parse_args()
-    
-    config_path = PATH / 'config' / f'{args.config}.yml'
-    config = get_config(config_path)
-
-    if args.num_datasets:
-        config['num_datasets'] = args.num_datasets
-    if args.num_particles:
-        config['num_particles'] = args.num_particles
-
-    if config['study_generalizability']:
-        config['data_dir'] = PATH / 'data_gen'
-    else:
-        config['data_dir'] = PATH / 'data'
-        
-    config['log_file_path'] = config['data_dir'] / config['log_file_name']
-
-    # Create dataset directory if it doesn't exist
-    if not config['data_dir'].exists():
-        config['data_dir'].mkdir(parents=True, exist_ok=True)
-
-    # Log the start time
-    log_entry = f"Dataset generation started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"    
-    with open(config['log_file_path'], 'a') as f:
-        f.write(log_entry)
-
-    return config
-
 
 if __name__ == "__main__":
     """
     This script generates multiple datasets (with different parameters) and then combines them into a single dataset. 
     The user can specify the number of datasets to generate. A naive choice is to generate only one dataset.
     """
-    
-    config = prepare()
+    set_seed(42)
+    config = prepare_generate()
 
     for i in range(config['num_datasets']):
         simulate(dataset_idx=i, config=config)

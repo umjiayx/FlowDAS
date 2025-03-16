@@ -267,17 +267,20 @@ def prepare():
     set_seed(427)
 
     parser = argparse.ArgumentParser(description='FlowDAS Evaluation')
-    parser.add_argument('--config', type=str, default='eval_win1_G', help='Path to evaluation config')
-    parser.add_argument('--N_trajectory', type=int, default=64, help='Number of trajectories to evaluate')
-    parser.add_argument('--LT', type=int, default=15, help='Number of testing states of each trajectory')
+    parser.add_argument('--config', type=str, default='eval_win1_G', 
+                        help='Path to evaluation config')
+    parser.add_argument('--N_trajectory', type=int, default=64, 
+                        help='Number of trajectories to evaluate')
+    parser.add_argument('--LT', type=int, default=15, 
+                        help='Number of testing states of each trajectory')
     args = parser.parse_args()
     
     config_path = PATH / 'config' / f'{args.config}.yml'
     config = get_config(config_path)
 
-    if args.N_trajectory:
+    if args.N_trajectory is not None:
         config['N_trajectory'] = args.N_trajectory
-    if args.LT:
+    if args.LT is not None:
         config['LT'] = args.LT
 
     # Create a path that includes both timestamp and config name (without extension)
