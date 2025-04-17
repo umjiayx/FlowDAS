@@ -7,6 +7,8 @@ import numpy as np
 import logging
 from utils import *
 
+import torch
+import torch.nn as nn
 
 config = {
     'path_dataset': '/home/jiayx/projects/FlowDAS/experiments/lorenz/data_gen/dataset',
@@ -77,4 +79,13 @@ def create_observations(config):
 if __name__ == "__main__":
     set_seed(427)
 
-    create_observations(config)
+    # create_observations(config)
+
+    bn = nn.BatchNorm1d(4)
+    print("Initial running mean:", bn.running_mean.clone())
+
+    bn.train()  # enable training mode
+    x = torch.randn(8, 4)  # batch of 8 samples, 4 features
+    _ = bn(x)  # forward pass (updates running stats)
+
+    print("Updated running mean:", bn.running_mean)
