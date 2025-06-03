@@ -1,0 +1,23 @@
+# Evaluation configuration for window size 8 with generalization
+study_generalizability: True
+
+path_dataset: './data_gen/dataset'
+checkpoint_path: './runs_train/best_models/train_win8_G/best_model.pth'
+
+sigma: 25.0  # Used for marginal_prob_std_fn
+device: 'cuda:0'
+window: 8
+x_dim: 3
+extra_dim: 3
+hidden_depth: 5
+embed_dim: 256
+use_bn: false
+N_MC: 21  # 21
+step_size: 0.0002
+num_steps: 600
+freq: 'hi'
+N_trajectory: 64
+LT: 15  # Number of testing states of each trajectory
+sigma_obs_hi: 0.25
+sigma_obs_lo: 0.05
+prev_stats_as_cond: true

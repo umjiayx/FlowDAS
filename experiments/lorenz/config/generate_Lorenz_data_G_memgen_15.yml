@@ -1,0 +1,8 @@
+study_generalizability: True
+study_Mem_Gen: True
+num_datasets: 256 # 2**15
+num_particles: 128  # 1024
+len_trajectory: 1024
+log_file_name: data_generation_log.txt
+L0: 1024  # Warm-up
+coeff: 0.05  # parameter variation

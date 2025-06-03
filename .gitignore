@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Data files
+*.npy
+*.pth
+*.txt
+*.h5
+*.hdf5
+*.pkl
+*.json
+*.csv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Misc
+.DS_Store
+
+# Reference code
+**/sda/
+
+# Debug
+**/lorenz0/** 
+**/lorenz1/**
+**/lorenz2/** 
+jyx.py
+
+# Generated files
+**/runs_train/
+**/runs_eval/
+**/data/
+**/data_gen/
+**/data_gen_*
+**/logs/
+**/checkpoints/
+**/best_models/
+**/final_models/
+**/testing/

@@ -1,0 +1,16 @@
+# Training configuration for window size 10 with generalization
+study_generalizability: True
+window: 10
+width: 256  # Network width
+depth: 5    # Network depth
+epochs: 6000  # Total training epochs
+batch_size: 64  # Batch size for training
+optimizer: Adam
+learning_rate: 1.0e-3 # 5.0e-3
+scheduler: linear
+sigma: 25.0
+extra_dim: 3
+x_dim: 3
+use_bn: False
+save_interval: 500  # Save checkpoint every N epochs
+prev_stats_as_cond: True
