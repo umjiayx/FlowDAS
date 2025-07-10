@@ -35,6 +35,19 @@ To reproduce the results from our paper for the Lorenz 1963 experiment, run:
 
 Under development. Coming soon! :)
 
+## Data and model checkpoint
+
+### Lorenz 1963
+
+Coming soon!
+
+### Navier-Stokes Equation
+
+Coming soon!
+
+### Weather Forecasting
+The dataset we used in weather forecasting experiment is available [here](https://www.dropbox.com/scl/fi/h83pp33jx5gz62gk0gncs/sevir_lr.zip?rlkey=dtnnk6x4af0hhrneugijhq60s&st=59exx82d&dl=0). The checkpoint of our pre-trained model can be accessed [here](https://www.dropbox.com/scl/fi/5z1bwfdvbztnums9deqhe/latest.pt?rlkey=o5izt721am3hzkcwjmmn7joym&st=0bdrds2o&dl=0).
+
 
 ## Citation
 
