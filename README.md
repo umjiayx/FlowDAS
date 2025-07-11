@@ -4,10 +4,7 @@ This repository contains the official implementation of [FlowDAS: A Flow-Based F
 
 This is the first version of the code and is currently under development for extension. At this stage, we provide the implementation for the Lorenz 1963 experiment. The code for Navier-Stokes, PIV, weather forecasting (and more!) will be released soon.
 
-
-## Code
-
-The majority of the code is written in [Python](https://www.python.org). Neural networks are built and trained using the [PyTorch](https://pytorch.org/) automatic differentiation framework.
+This codebase is organized to make it easy to reproduce our experiments and extend the framework. Here's how to get started:
 
 ## Environment Setup
 
@@ -20,33 +17,25 @@ conda activate flowdas
 conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3 -c pytorch
 ```
 
-## Getting Started
 
-This codebase is organized to make it easy to reproduce our experiments and extend the framework. Here's how to get started:
+## Experiments
 
-### Reproducing Results
+### 1. Lorenz 1963
 
-To reproduce the results from our paper for the Lorenz 1963 experiment, run:
-```
-./scripts/run.sh
-```
+To reproduce the results from our paper for the Lorenz 1963 experiment, run: ``./scripts/run.sh``.
 
-### Generalizability of FlowDAS
-
-Under development. Coming soon! :)
-
-## Data and model checkpoint
-
-### Lorenz 1963
+### 2. Navier-Stokes Equation
 
 Coming soon!
 
-### Navier-Stokes Equation
+### 3. Weather Forecasting
 
-Coming soon!
+The dataset used in our weather forecasting experiment can be dowmloaded [here](https://www.dropbox.com/scl/fi/h83pp33jx5gz62gk0gncs/sevir_lr.zip?rlkey=dtnnk6x4af0hhrneugijhq60s&st=59exx82d&dl=0). The checkpoint of our pre-trained model can be accessed [here](https://www.dropbox.com/scl/fi/5z1bwfdvbztnums9deqhe/latest.pt?rlkey=o5izt721am3hzkcwjmmn7joym&st=0bdrds2o&dl=0).
 
-### Weather Forecasting
-The dataset we used in weather forecasting experiment is available [here](https://www.dropbox.com/scl/fi/h83pp33jx5gz62gk0gncs/sevir_lr.zip?rlkey=dtnnk6x4af0hhrneugijhq60s&st=59exx82d&dl=0). The checkpoint of our pre-trained model can be accessed [here](https://www.dropbox.com/scl/fi/5z1bwfdvbztnums9deqhe/latest.pt?rlkey=o5izt721am3hzkcwjmmn7joym&st=0bdrds2o&dl=0).
+
+
+
+
 
 
 ## Citation
