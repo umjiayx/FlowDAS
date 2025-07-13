@@ -2,13 +2,13 @@
 
 This repository contains the official implementation of [FlowDAS: A Flow-Based Framework for Data Assimilation](https://arxiv.org/abs/2501.16642).
 
-This is the first version of the code and is currently under development for extension. At this stage, we provide the implementation for the Lorenz 1963 experiment. The code for Navier-Stokes, PIV, weather forecasting (and more!) will be released soon.
+This is the first version of the code and is currently under development for extension. At this stage, we provide the implementation for the Lorenz 1963 and weather forecasting experiment. The code for Navier-Stokes, PIV (and more!) will be released soon.
 
 This codebase is organized to make it easy to reproduce our experiments and extend the framework. Here's how to get started:
 
 ## Environment Setup
 
-To set up the environment for FlowDAS, we provide an `environment.yml` file that contains all the necessary dependencies. You can create and activate the conda environment using the commands below. Note that after creating the environment, you'll need to install PyTorch separately to ensure compatibility with your CUDA version.
+To set up the environment for FlowDAS, we provide an `environment.yml` file (in each experiment folder) that contains all the necessary dependencies. You can create and activate the conda environment using the commands below. Note that after creating the environment, you'll need to install PyTorch separately to ensure compatibility with your CUDA version.
 
 
 ```
