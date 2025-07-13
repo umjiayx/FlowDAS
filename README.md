@@ -30,10 +30,12 @@ Coming soon!
 
 ### 3. Weather Forecasting
 
-The dataset used in our weather forecasting experiment can be dowmloaded [here](https://www.dropbox.com/scl/fi/h83pp33jx5gz62gk0gncs/sevir_lr.zip?rlkey=dtnnk6x4af0hhrneugijhq60s&st=59exx82d&dl=0). The checkpoint of our pre-trained model can be accessed [here](https://www.dropbox.com/scl/fi/5z1bwfdvbztnums9deqhe/latest.pt?rlkey=o5izt721am3hzkcwjmmn7joym&st=0bdrds2o&dl=0).
+The dataset used in our weather forecasting experiment can be dowmloaded [here](https://www.dropbox.com/scl/fi/h83pp33jx5gz62gk0gncs/sevir_lr.zip?rlkey=dtnnk6x4af0hhrneugijhq60s&st=59exx82d&dl=0). The checkpoint of our pre-trained model can be accessed [here](https://www.dropbox.com/scl/fi/5z1bwfdvbztnums9deqhe/latest.pt?rlkey=o5izt721am3hzkcwjmmn7joym&st=0bdrds2o&dl=0). 
 
 
+## Acknowledgements
 
+We built our repo on the [Probabilistic Forecasting with Stochastic Interpolants and Föllmer Processes](https://github.com/interpolants/forecasting) repo that is publicly available.
 
 
 
