@@ -1,6 +1,24 @@
 ### 3. Weather Forecasting
 
-To reproduce the results based on our provided code and checkpoint:
+#### Training 
+To train a UNet checkpoint:
+```
+python main_research_lookback_sevir.py \
+  --dataset sevir \
+  --beta_fn t^2 \
+  --sigma_coef 1 \
+  --use_wandb 0 \
+  --debug 0 \
+  --overfit 0 \
+  --task_config ./configs/super_resolution_config.yaml \
+  --sample_only 0 \  
+  --sevir_datapath <path_to_your_sevir_dataset> \
+  --save_checkpoint <path_to_your_checkpoint>  
+```
+
+This will train a UNet checkpoint with fixed window size of 7 and 6 previous states as conditions
+#### Inference
+To reproduce the results based on our provided code and checkpoint [inference]:
 
 ```
 python main_research_sevir_gen_sample4GL_621_opensource_0710.py \
@@ -27,5 +45,5 @@ python main_research_sevir_gen_sample4GL_621_opensource_0710.py \
 ## 📆 Coming Soon
 - [x] Checkpoint release
 - [x] Inference code release
-- [ ] Training code release
+- [x] Training code release
 
