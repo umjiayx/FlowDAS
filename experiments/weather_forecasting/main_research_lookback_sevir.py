@@ -5,11 +5,11 @@ import torch
 import torch.nn as nn
 import torch.utils.data
 from torch.utils.data import DataLoader 
-from torch.optim.lr_scheduler import LinearLR
 import torchvision.utils
 from torchvision import transforms, datasets
 import torchvision.transforms as transforms
 from torchvision import transforms as T
+from torch.optim.lr_scheduler import LinearLR
 from torchvision.utils import make_grid
 from dps.measurements import get_noise
 from PIL import Image
@@ -44,13 +44,14 @@ from interpolant_new import Interpolant
 
 class Trainer:
 
-    def __init__(self, config, load_path = None, sample_only = False, use_wandb = True, operator = None, noiser = None):
+    def __init__(self, config, load_path = None, sample_only = False, use_wandb = True, operator = None, noiser = None, save_checkpoint = None):
 
         self.config = config
         c = config
         self.operator = operator
         self.noiser = noiser
         self.device = c.device
+        self.save_checkpoint = save_checkpoint
 
         if sample_only:
             assert load_path is not None
@@ -67,9 +68,11 @@ class Trainer:
         if c.dataset == 'cifar':
             self.dataloader = get_cifar_dataloader(c)
 
-        elif c.dataset == 'nse':
-            config_sevir = {'dataset_name': 'sevirlr', 'img_height': 128, 'img_width': 128, 'in_len': 1, 'out_len': 1, 'seq_len': 2, 'plot_stride': 1, 'interval_real_time': 10, 'sample_mode': 'sequent', 'stride': 6, 'layout': 'NTHWC', 'start_date': None, 'train_test_split_date': [2019, 6, 1], 'end_date': None, 'val_ratio': 0.1, 'metrics_mode': '0', 'metrics_list': ['csi', 'pod', 'sucr', 'bias'], 'threshold_list': [16, 74, 133, 160, 181, 219], 'aug_mode': '2', 'sevir_dir':'/scratch/qingqu_root/qingqu1/siyiche/PreDiff/datasets/sevirlr/', 'batch_size':50, 'sample_only':c.sample_only, 'num_workers': 16,}
+        elif c.dataset == 'sevir':
+            config_sevir = {'dataset_name': 'sevirlr', 'img_height': 128, 'img_width': 128, 'in_len': 6, 'out_len': 1, 'seq_len': 7, 'plot_stride': 1, 'interval_real_time': 10, 'sample_mode': 'sequent', 'stride': 6, 'layout': 'NTHWC', 'start_date': None, 'train_test_split_date': [2019, 6, 1], 'end_date': None, 'val_ratio': 0.1, 'metrics_mode': '0', 'metrics_list': ['csi', 'pod', 'sucr', 'bias'], 'threshold_list': [16, 74, 133, 160, 181, 219], 'aug_mode': '2', 'sevir_dir':c.data_fname, 'batch_size':100, 'sample_only':c.sample_only, 'num_workers': 8,}
             self.dataloader, old_pixel_norm, new_pixel_norm = new_get_forecasting_dataloader_4train_sevir(config_sevir)
+            print('dataset volumn', self.dataloader)
+            
             
             c.old_pixel_norm = old_pixel_norm
             c.new_pixel_norm = new_pixel_norm
@@ -84,7 +87,7 @@ class Trainer:
 
         self.model.to(self.device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=c.base_lr)
-        self.scheduler = LinearLR(self.optimizer, start_factor=1, end_factor=0.001, total_iters=c.max_steps)
+        self.scheduler = LinearLR(self.optimizer, start_factor=1.0, end_factor=0.01, total_iters=c.max_steps)
         self.step = 0
       
         if self.load_path is not None:
@@ -101,8 +104,8 @@ class Trainer:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'step': self.step,
         }
-        maybe_create_dir('./ckpts_condition1_sevir_0506_l1_2en5')
-        path = f"./ckpts_condition1_sevir_0506_l1_2en5/latest.pt"
+        maybe_create_dir(self.save_checkpoint)
+        path = f"{self.save_checkpoint}/latest.pt"
         torch.save(D, path)
         print("saved ckpt at ", path)
 
@@ -208,7 +211,8 @@ class Trainer:
             if norm_grad ==None:
                 norm_grad = 0
                 print('no grad!')
-            xt = mu + g * torch.randn_like(mu) * dt.sqrt() - scale * norm_grad
+            # xt = mu + g * torch.randn_like(mu) * dt.sqrt() - scale * norm_grad
+            xt = mu + g * torch.randn_like(mu) * dt.sqrt()
             return xt, mu # return sample and its mean
 
         for i, tscalar in enumerate(ts):
@@ -251,7 +255,7 @@ class Trainer:
             preprocess_fn = lambda x : to_grid(x, c.grid_kwargs)
 
         else:
-            assert c.dataset == 'nse'
+            assert c.dataset == 'sevir'
             preprocess_fn = lambda x, name: to_grid(make_redblue_plots(x, c, name), c.grid_kwargs)
 
 
@@ -306,7 +310,6 @@ class Trainer:
 
     def image_sq_norm(self, x):
         return x.pow(2).sum(-1).sum(-1).sum(-1)
-
     def image_l1_norm(self, x):
         return x.abs().sum(-1).sum(-1).sum(-1)
 
@@ -315,25 +318,57 @@ class Trainer:
         # print('input1', D['zt'].shape, D['cond'].shape)
         model_out = self.model(D['zt'], D['t'], D['label'], cond = D['cond'])
         target = D['drift_target']
-        return self.image_l1_norm(model_out - target).mean()
+        return self.image_sq_norm(model_out - target).mean()
 
     def center(self, x):
         return (x * 2.0) - 1.0
 
     @torch.no_grad()
-    def prepare_batch_nse(self, batch = None, for_sampling = False):
+    def prepare_batch_sevir(self, batch = None, for_sampling = False):
 
         assert not self.config.center_data
+        # print('batch', batch.shape)
+        # batch = 2*batch - 1
+        # batch += 1e-5
+        # log_batch = torch.log10(batch)
+        # # print("data scale", log_batch.min(), log_batch.max())
+        # batch = log_batch+2.5
 
         xlo, xhi = batch[:,:1].squeeze(-1), batch[:,1:].squeeze(-1)
         # print('xlo shape', xlo.shape)
+        # def min_max_normalize_batch(data):
+        #     """
+        #     Normalize each batch independently.
+        #     Input shape: [batch_size, channel, width, height]
+        #     Output shape: [batch_size, channel, width, height]
+        #     """
+        #     # Compute min and max for each batch
+        #     min_val = data.view(data.size(0), -1).min(dim=1).values  # Shape: [batch_size]
+        #     max_val = data.view(data.size(0), -1).max(dim=1).values  # Shape: [batch_size]
 
-        if for_sampling:
-            chose = random.randint(0, xlo.shape[0] - self.config.sampling_batch_size - 2)
-            xlo = xlo[chose:chose+self.config.sampling_batch_size]
-            xhi = xhi[chose:chose+self.config.sampling_batch_size]
+        #     # Reshape min and max to [batch_size, 1, 1, 1] for broadcasting
+        #     min_val = min_val.view(-1, 1, 1, 1)
+        #     max_val = max_val.view(-1, 1, 1, 1)
 
+        #     # Avoid division by zero
+        #     range_val = max_val - min_val
+        #     range_val = torch.where(range_val == 0, torch.ones_like(range_val), range_val)
+
+        #     # Normalize
+        #     return (data - min_val) / range_val
+
+        # if for_sampling:
+        #     chose = random.randint(0, xlo.shape[0] - self.config.sampling_batch_size - 2)
+        #     xlo = xlo[chose:chose+self.config.sampling_batch_size]
+        #     xhi = xhi[chose:chose+self.config.sampling_batch_size]
+
+        # xlo = min_max_normalize_batch(xlo)  # Normalize each batch independently
+        # xhi = min_max_normalize_batch(xhi)  # Normalize each batch independently
+        xlo = (xlo-0.5)*10
+        xhi = (xhi-0.5)*10
+        # print('scale', xlo.min(), xlo.max())
         xlo, xhi = xlo.to(self.device), xhi.to(self.device)
+
 
         N = xlo.shape[0]
         y = None
@@ -377,7 +412,7 @@ class Trainer:
         if self.config.dataset == 'cifar':
             D = self.prepare_batch_cifar(batch, for_sampling = for_sampling) 
         else:
-            D = self.prepare_batch_nse(batch, for_sampling = for_sampling)
+            D = self.prepare_batch_sevir(batch, for_sampling = for_sampling)
 
         # get random batch of times
         D = self.get_time(D)
@@ -408,10 +443,20 @@ class Trainer:
     def do_step(self, batch_idx, batch):
 
         D = self.prepare_batch(batch)
+        # d_z0_his.append(D['z0'])
+        # if len(d_z0_his)>2:
+        #     print(d_z0_his[-2][:,0])
+        #     print(d_z0_his[-1][:,0])
+        #     if d_z0_his[-2][:,0] == d_z0_his[-1][:,0]:
+        #         print('wrong')
+        #         assert 1==0
+        #     else:
+        #         print('proceed')
+
         ## preproccess
         self.model.train()
         loss = self.training_step(D)
-        print('l', loss)
+        # print('l', loss)
         loss.backward()
         grad_norm = self.optimizer_step() # updates self.step 
         self.scheduler.step()
@@ -430,18 +475,20 @@ class Trainer:
 
         print('starting fit')
         print("starting training")
+        # d_z0_his = []
         while self.step < self.config.max_steps:
 
             for batch_idx, batch in enumerate(self.dataloader):
  
                 if self.step >= self.config.max_steps:
                     return
+                # print('batch_idx', batch_idx)
 
                 self.do_step(batch_idx, batch)
 
 class Config:
     
-    def __init__(self, dataset, debug, overfit, sigma_coef, beta_fn,device, home,nse_path = None, auto_step = 1, sample_only = False):
+    def __init__(self, dataset, debug, overfit, sigma_coef, beta_fn,device, home,sevir_path = None, auto_step = 1, sample_only = False):
 
         self.dataset = dataset
 
@@ -468,7 +515,7 @@ class Config:
             self.data_path = '../data/'
             self.grid_kwargs = {'normalize' : True, 'value_range' : (-1, 1)}
 
-        elif self.dataset == 'nse':
+        elif self.dataset == 'sevir':
 
 
             self.center_data = False
@@ -476,10 +523,10 @@ class Config:
 
             maybe_create_dir(self.home)
 
-            if nse_path == None:
-                self.data_fname = 'nse_data_tiny.pt'
+            if sevir_path == None:
+                self.data_fname = 'sevir_data_tiny.pt'
             else:
-                self.data_fname = nse_path
+                self.data_fname = sevir_path
             self.num_classes = 1
             self.lo_size = 64
             self.hi_size = 128
@@ -497,7 +544,7 @@ class Config:
         # shared
         self.num_workers = 4
         self.delta_t = 0.5
-        self.wandb_project = 'nse'
+        self.wandb_project = 'sevir'
         self.wandb_entity = 'siyiche'
         self.use_wandb = True
         self.noise_strength = 1.0
@@ -513,7 +560,7 @@ class Config:
         else:
             self.sample_every = 1000
             self.print_loss_every = 100 #1000 
-            self.save_every = 1000
+            self.save_every = 1
         
         # some training hparams
         self.batch_size = 128 if self.dataset == 'cifar' else 32 
@@ -522,8 +569,8 @@ class Config:
         self.t_min_train = 0.0
         self.t_max_train = 1.0
         self.max_grad_norm = 1.0
-        self.base_lr = 2e-5
-        self.max_steps = 1_000_000
+        self.base_lr = 2e-4
+        self.max_steps = 10000000
         
         # arch
         self.unet_use_classes = True if self.dataset == 'cifar' else False
@@ -540,7 +587,7 @@ class Config:
 def main():
 
     parser = argparse.ArgumentParser(description='hello')
-    parser.add_argument('--dataset', type = str, choices = ['cifar', 'nse'], default = 'nse')
+    parser.add_argument('--dataset', type = str, choices = ['cifar', 'sevir'], default = 'sevir')
     parser.add_argument('--load_path', type = str, default = None)
     parser.add_argument('--use_wandb', type = int, default = 1)
     parser.add_argument('--sigma_coef', type = float, default = 1.0) 
@@ -550,7 +597,8 @@ def main():
     parser.add_argument('--overfit', type = int, default = 0)
     parser.add_argument('--task_config', type=str)
     parser.add_argument('--savedir', type=str, default = './tmp_images/')
-    parser.add_argument('--nse_datapath', type=str, default = None)
+    parser.add_argument('--sevir_datapath', type=str, default = None)
+    parser.add_argument('--save_checkpoint', type=str, default = './sevir_unet')
     args = parser.parse_args()
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
@@ -566,7 +614,7 @@ def main():
         beta_fn = args.beta_fn,
         device = device,
         home = args.savedir,
-        nse_path = args.nse_datapath,
+        sevir_path = args.sevir_datapath,
         sample_only = bool(args.sample_only)
     )
     task_config = load_yaml(args.task_config)
@@ -579,7 +627,8 @@ def main():
         sample_only = bool(args.sample_only), 
         use_wandb = bool(args.use_wandb),
         operator = operator,
-        noiser = noiser 
+        noiser = noiser,
+        save_checkpoint = args.save_checkpoint,
     )
 
     if bool(args.sample_only):
