@@ -1,0 +1,123 @@
+# FlowDAS Configuration File
+
+# Dataset configuration
+dataset:
+  name: nse  # Options: 'cifar', 'nse'
+  data_path: './nse_data_tiny.pt'  # Path to NSE data file (for debugging, will be overridden by nse_datapath)
+  center_data: false  # Whether to center data to [-1, 1]
+  
+  # NSE-specific parameters
+  nse:
+    nse_datapath: '/scratch/qingqu_root/qingqu/jiayx/FlowDAS/NSE/data/data_file.pt'  # Path to NSE data file (for debug)
+    lo_size: 64  # Low resolution size
+    hi_size: 128  # High resolution size
+    time_lag: 2  # Time lag for prediction
+    subsampling_ratio: 1.0  # Data subsampling ratio
+    train_val_split: 0.95  # Training/validation split ratio
+    avg_pixel_norm: 3.0679163932800293  # Average pixel norm for normalization
+    temporal_downsampling: 2  # Downsampling factor along time dimension
+  
+  # CIFAR-specific parameters
+  cifar:
+    data_path: '../data/'
+    num_classes: 10
+    image_size: 32
+
+# Model architecture (UNet)
+model:
+  architecture: unet
+  channels: 128  # Base channel dimension
+  dim_mults: [1, 2, 2, 2]  # Channel multipliers for each resolution
+  resnet_block_groups: 8
+  learned_sinusoidal_dim: 32
+  attn_dim_head: 64
+  attn_heads: 4
+  learned_sinusoidal_cond: true
+  random_fourier_features: false
+  use_classes: false  # true for CIFAR, false for NSE
+
+# Stochastic Interpolant parameters
+interpolant:
+  sigma_coef: 1.0  # Diffusion coefficient
+  beta_fn: 't^2'  # Options: 't', 't^2'
+  noise_strength: 1.0
+  
+  # Time range for training
+  t_min_train: 0.0
+  t_max_train: 1.0
+  
+  # Time range for sampling
+  t_min_sampling: 0.0
+  t_max_sampling: 0.999
+
+# FlowDAS specific parameters
+flowdas:
+  time_window: 10  # Number of previous frames for conditioning
+  auto_step: 3  # Number of auto-regressive steps
+  MC_times: 500  # Monte Carlo samples for estimating X1
+  exp_times: 1  # Number of experiments for ensemble
+  grad_scale: 1.0  # Gradient scaling factor for data assimilation
+
+# Training parameters (only sampling batch size is used for inference)
+training:
+  batch_size: 32  # Batch size (128 for CIFAR, 32 for NSE)
+  sampling_batch_size: 1  # Batch size for sampling
+  num_workers: 4
+  max_steps: 1000000
+  base_lr: 2.0e-5  # Base learning rate
+  max_grad_norm: 1.0  # Gradient clipping threshold
+  overfit: false  # Overfit to single batch for debugging
+  
+  # Logging intervals
+  sample_every: 200  # Sample every N steps # TODO: 200, 500, 1000
+  print_loss_every: 100  # Print loss every N steps
+  save_every: 100  # Save checkpoint every N steps
+
+# Sampling parameters
+sampling:
+  sample_only: true  # Only run sampling (no training)
+  load_path: './latest.pt'  # Path to checkpoint to load for inference (change to your checkpoint path)
+  EM_sample_steps: 20  # Number of Euler-Maruyama steps # TODO: 500
+  debug_mode: false  # Enable debug mode (reduces steps)
+  trajectory_index: 0  # Which trajectory to use (0 to N_trajectories-1, null=use first from dataloader)
+  time_index: 0  # Starting time index in trajectory (0 to T-time_window-auto_step-1, null=use first valid)
+  
+  # Debug mode overrides (when debug_mode: true)
+  debug:
+    EM_sample_steps: 10
+    sample_every: 10
+    print_loss_every: 10
+
+# Measurement operator (for inverse problems / data assimilation)
+measurement:
+  operator:
+    name: super_resolution  # Options: 'super_resolution', 'sparse_observation'
+    
+    # Super resolution parameters (used when name: super_resolution)
+    scale_factor: 4  # Downsample by this factor (e.g., 128/4 = 32)
+    # target_size: [32, 32]  # Alternative: specify exact target size
+    
+    # Sparse observation parameters (used when name: sparse_observation)
+    ratio: 0.05  # Observation ratio (e.g., 0.05 = 5% of pixels observed)
+  
+  noise:
+    name: gaussian  # Options: 'gaussian', 'poisson', 'clean'
+    sigma: 0.05  # Noise level (for gaussian noise)
+
+# Logging and output
+logging:
+  use_wandb: true
+  wandb_project: 'FlowDAS_NSE_inference'
+  wandb_entity: 'jiayx18-university-of-michigan'
+  ckpt_save_dir: './ckpts'
+  output_dir: './tmp_images/'
+  
+  # Grid visualization parameters
+  grid_kwargs:
+    normalize: false
+
+# System parameters
+system:
+  device: cuda:0  # Will auto-detect if CUDA is available
+  delta_t: 0.5  # Time step for physics
+  random_seed: 42  # Random seed for reproducibility (set to null for non-deterministic)
