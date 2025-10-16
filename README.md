@@ -26,17 +26,16 @@ To reproduce the results from our paper for the Lorenz 1963 experiment, run: ``.
 
 ### 2. Navier-Stokes Equation
 
-Coming soon!
+The dataset used in our Navier-Stokes Equation experiment can be downloaded [here](https://www.dropbox.com/scl/fi/rqpv4pgujhtzswo6xhpzt/data_file.pt?rlkey=sn0ethjnf6b9mw3koybd3v0dh&st=czi9kcz1&dl=0). The checkpoint of our pre-trained model can be accessed [here](https://www.dropbox.com/scl/fi/jhqtf5yag7ithzrv2yxgs/latest.pt?rlkey=j4t7zhdu3uypnhqsrv1cx9io5&st=5dw9opdx&dl=0). 
 
 ### 3. Weather Forecasting
 
-The dataset used in our weather forecasting experiment can be dowmloaded [here](https://www.dropbox.com/scl/fi/h83pp33jx5gz62gk0gncs/sevir_lr.zip?rlkey=dtnnk6x4af0hhrneugijhq60s&st=59exx82d&dl=0). The checkpoint of our pre-trained model can be accessed [here](https://www.dropbox.com/scl/fi/5z1bwfdvbztnums9deqhe/latest.pt?rlkey=o5izt721am3hzkcwjmmn7joym&st=0bdrds2o&dl=0). 
+The dataset used in our weather forecasting experiment can be downloaded [here](https://www.dropbox.com/scl/fi/h83pp33jx5gz62gk0gncs/sevir_lr.zip?rlkey=dtnnk6x4af0hhrneugijhq60s&st=ux0ud8pz&dl=0). The checkpoint of our pre-trained model can be accessed [here](https://www.dropbox.com/scl/fi/5z1bwfdvbztnums9deqhe/latest.pt?rlkey=o5izt721am3hzkcwjmmn7joym&st=0o0nvqsr&dl=0). 
 
 
 ## Acknowledgements
 
 We built our repo on the [Probabilistic Forecasting with Stochastic Interpolants and Föllmer Processes](https://github.com/interpolants/forecasting) repo that is publicly available.
-
 
 
 
