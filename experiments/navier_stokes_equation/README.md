@@ -108,6 +108,13 @@ python main.py --config configs/config_training.yaml \
     --random_seed 123
 ```
 
+## Dataset
+
+We use the same 2D Navier–Stokes dataset as in the stochastic interpolants forecasting benchmark provided in  
+[https://github.com/interpolants/forecasting/tree/main/navier-stokes](https://github.com/interpolants/forecasting/tree/main/navier-stokes).
+
+Please follow the instructions in that repository to download and prepare the dataset. No additional preprocessing is required beyond what is described there.
+
 ## Data Format
 
 Expected data format: `[N_trajectories, T, H, W]`
