@@ -1,11 +1,11 @@
-# FlowDAS: A Flow-Based Framework for Data Assimilation
+# FlowDAS: A Stochastic Interpolant-Based Framework for Data Assimilation
 
 This repository contains the official implementation of
 [FlowDAS: A Stochastic Interpolant-based Framework for Data Assimilation](https://arxiv.org/abs/2501.16642).
 
 This is the first version of the code and is currently under development for extension.
-At this stage, we provide the implementation for the Lorenz 1963 and weather forecasting experiments.
-The code for Navier-Stokes, PIV (and more!) will be released soon.
+At this stage, we provide the implementation for the Lorenz 1963, Navier-Stokes and weather forecasting experiments.
+The code for PIV (and more!) will be released soon.
 
 This codebase is organized to make it easy to reproduce our experiments and extend the framework.
 Here's how to get started:
